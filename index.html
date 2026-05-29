@@ -63,6 +63,7 @@
 
   <!-- FAB Speed Dial -->
   <div id="fab-menu" class="fab-menu hidden">
+    <button class="fab-menu-item" onclick="fabMenuSelect('tag-delete')">🗑️ 태그 삭제</button>
     <button class="fab-menu-item" onclick="fabMenuSelect('tag')">🏷️ 태그 추가</button>
     <button class="fab-menu-item" onclick="fabMenuSelect('series')">📚 새 시리즈</button>
   </div>
@@ -111,6 +112,29 @@
       <div class="modal-actions">
         <button class="btn btn-cancel" onclick="hideModal('modal-add-tag')">취소</button>
         <button class="btn btn-confirm" onclick="saveNewTag()">만들기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MODAL: 시리즈 태그 편집 ── -->
+  <div id="modal-series-tags" class="modal-backdrop">
+    <div class="modal">
+      <h3>🏷️ 태그 편집</h3>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:12px">탭해서 추가 / 다시 탭하면 제거</p>
+      <div id="series-tag-edit-list" class="tag-chips-wrap"></div>
+      <div class="modal-actions">
+        <button class="btn btn-confirm" onclick="hideModal('modal-series-tags')">완료</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MODAL: 태그 삭제 ── -->
+  <div id="modal-delete-tags" class="modal-backdrop">
+    <div class="modal">
+      <h3>🗑️ 태그 삭제</h3>
+      <div id="tag-delete-list" style="display:flex;flex-direction:column;gap:10px;margin-bottom:4px"></div>
+      <div class="modal-actions">
+        <button class="btn btn-confirm" onclick="hideModal('modal-delete-tags')">완료</button>
       </div>
     </div>
   </div>

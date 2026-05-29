@@ -268,6 +268,7 @@ async function renderEpisodes() {
   header.innerHTML = `
     <button class="header-back" onclick="navigate('home')">‹</button>
     <span class="header-title">${escHtml(series.title)}</span>
+    <button class="header-action tag-btn" onclick="openSeriesTagModal()" style="background:var(--surface2);color:var(--accent);margin-right:6px">🏷️</button>
     <button class="header-action" onclick="openAddEpisodeModal()">+ 추가</button>`;
 
   episodeCache = await dbGetAll('episodes', 'seriesId', state.seriesId);
@@ -458,6 +459,72 @@ function fabMenuSelect(type) {
   closeFabMenu();
   if (type === 'series') openAddSeriesModal();
   else if (type === 'tag') openAddTagModal();
+  else if (type === 'tag-delete') openDeleteTagModal();
+}
+
+// ── SERIES TAG EDIT ──────────────────────────────────────────────────────────
+async function openSeriesTagModal() {
+  tagsCache = await dbGetAll('tags');
+  const series = await dbGet('series', state.seriesId);
+  const currentTagIds = series.tagIds || [];
+
+  const wrap = document.getElementById('series-tag-edit-list');
+  if (!tagsCache.length) {
+    wrap.innerHTML = '<p style="color:var(--text2);font-size:14px;text-align:center;padding:12px">태그가 없어요.<br>홈의 + 버튼에서 태그를 먼저 만들어 주세요.</p>';
+  } else {
+    wrap.innerHTML = tagsCache.map(t => {
+      const has = currentTagIds.includes(t.id);
+      return `<button class="tag-chip${has ? ' active' : ''}" style="--tc:${tagColor(t.id)}"
+        data-id="${t.id}" data-has="${has}" onclick="toggleSeriesTag(${t.id})">${escHtml(t.name)}</button>`;
+    }).join('');
+  }
+  showModal('modal-series-tags');
+}
+
+async function toggleSeriesTag(id) {
+  const series = await dbGet('series', state.seriesId);
+  const tagIds = series.tagIds || [];
+  if (tagIds.includes(id)) {
+    await showConfirm('이미 추가된 태그예요', '이 태그를 시리즈에서 제거할까요?', '제거', 'background:var(--danger);color:#fff');
+    const updated = tagIds.filter(t => t !== id);
+    await dbPut('series', { ...series, tagIds: updated });
+  } else {
+    await dbPut('series', { ...series, tagIds: [...tagIds, id] });
+  }
+  await openSeriesTagModal();
+  await renderEpisodes();
+}
+
+// ── TAG DELETE ────────────────────────────────────────────────────────────────
+async function openDeleteTagModal() {
+  tagsCache = await dbGetAll('tags');
+  const wrap = document.getElementById('tag-delete-list');
+  if (!tagsCache.length) {
+    wrap.innerHTML = '<p style="color:var(--text2);font-size:14px;text-align:center;padding:12px">태그가 없어요.</p>';
+  } else {
+    wrap.innerHTML = tagsCache.map(t =>
+      `<div class="tag-delete-row">
+        <span class="tag-chip" style="--tc:${tagColor(t.id)}">${escHtml(t.name)}</span>
+        <button class="tag-delete-btn" onclick="deleteTag(${t.id})">🗑️</button>
+      </div>`
+    ).join('');
+  }
+  showModal('modal-delete-tags');
+}
+
+async function deleteTag(id) {
+  const tag = tagsCache.find(t => t.id === id);
+  const ok = await showConfirm('태그 삭제', `"${tag?.name}" 태그를 삭제할까요?\n이 태그가 달린 시리즈에서도 제거돼요.`);
+  if (!ok) { await openDeleteTagModal(); return; }
+  await dbDelete('tags', id);
+  // 모든 시리즈에서 해당 태그 제거
+  const allSeries = await dbGetAll('series');
+  for (const s of allSeries) {
+    if ((s.tagIds || []).includes(id)) {
+      await dbPut('series', { ...s, tagIds: s.tagIds.filter(t => t !== id) });
+    }
+  }
+  await openDeleteTagModal();
 }
 
 // ── TAGS ─────────────────────────────────────────────────────────────────────
