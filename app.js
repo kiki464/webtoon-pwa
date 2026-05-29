@@ -182,6 +182,8 @@ function revokeThumbs() {
 
 async function renderHome() {
   revokeThumbs();
+  const searchEl = document.getElementById('search-input');
+  if (searchEl) searchEl.value = '';
   seriesCache = await dbGetAll('series');
   seriesCache.sort((a, b) => b.createdAt - a.createdAt);
 
@@ -616,6 +618,20 @@ function renameResolve(val) {
 // ── UTILS ─────────────────────────────────────────────────────────────────────
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── SEARCH ───────────────────────────────────────────────────────────────────
+function normalize(str) {
+  return str.replace(/\s+/g, '').toLowerCase();
+}
+
+function onSearch(query) {
+  const q = normalize(query);
+  const cards = document.querySelectorAll('.series-card');
+  cards.forEach(card => {
+    const title = normalize(card.querySelector('.card-title')?.textContent || '');
+    card.style.display = (!q || title.includes(q)) ? '' : 'none';
+  });
 }
 
 // ── INSTALL BANNER ────────────────────────────────────────────────────────────

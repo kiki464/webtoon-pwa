@@ -165,11 +165,12 @@ html, body {
 /* Reader overlay (tap to show/hide) */
 .reader-overlay-top {
   position: fixed; top: 0; left: 0; right: 0; z-index: 50;
-  background: linear-gradient(to bottom, rgba(0,0,0,.85), transparent);
-  padding: 12px 16px 28px;
+  background: linear-gradient(to bottom, rgba(0,0,0,.9) 60%, transparent);
+  padding: calc(env(safe-area-inset-top) + 48px) 16px 24px;
   transform: translateY(-100%);
   transition: transform .25s ease;
   pointer-events: none;
+  display: flex; align-items: center; gap: 12px;
 }
 .reader-overlay-top.visible {
   transform: translateY(0);
@@ -178,10 +179,11 @@ html, body {
 .r-back-btn {
   background: none; border: none; color: var(--accent);
   font-size: 15px; font-weight: 700; cursor: pointer;
-  padding: 0 0 8px; display: flex; align-items: center; gap: 4px;
+  padding: 6px 8px 6px 0; flex-shrink: 0;
 }
-.reader-overlay-top .r-series { font-size: 13px; color: var(--text2); font-weight: 600; }
-.reader-overlay-top .r-episode { font-size: 17px; font-weight: 800; margin-top: 2px; }
+.r-titles { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.r-titles .r-series { font-size: 12px; color: var(--text2); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.r-titles .r-episode { font-size: 16px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .reader-overlay-bottom {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
@@ -321,6 +323,18 @@ html, body {
   transition: width .3s;
 }
 .progress-bar.hidden { display: none; }
+
+/* ── SEARCH ── */
+.search-bar-wrap { padding: 10px 12px 4px; flex-shrink: 0; }
+.search-input {
+  width: 100%; background: var(--surface2);
+  border: 1.5px solid rgba(255,255,255,.08);
+  border-radius: 12px; padding: 11px 14px;
+  color: var(--text); font-size: 15px; outline: none;
+  -webkit-appearance: none;
+}
+.search-input:focus { border-color: var(--accent); }
+.search-input::placeholder { color: var(--text2); }
 
 /* scrollbar */
 ::-webkit-scrollbar { width: 0; }

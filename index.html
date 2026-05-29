@@ -27,6 +27,9 @@
   <!-- ── HOME ── -->
   <div id="screen-home" class="screen hidden">
     <div id="home-header" class="header"></div>
+    <div class="search-bar-wrap">
+      <input type="search" id="search-input" class="search-input" placeholder="🔍  시리즈 검색..." oninput="onSearch(this.value)" autocomplete="off" autocorrect="off" spellcheck="false">
+    </div>
     <div id="home-content"></div>
   </div>
 
@@ -40,8 +43,10 @@
   <div id="screen-reader" class="screen hidden">
     <div id="reader-overlay-top" class="reader-overlay-top">
       <button class="r-back-btn" onclick="navigate('episodes',{seriesId:state.seriesId})">‹ 나가기</button>
-      <div class="r-series" id="reader-series-title"></div>
-      <div class="r-episode" id="reader-episode-title"></div>
+      <div class="r-titles">
+        <div class="r-series" id="reader-series-title"></div>
+        <div class="r-episode" id="reader-episode-title"></div>
+      </div>
     </div>
     <div id="reader-content"></div>
     <div id="reader-overlay-bottom" class="reader-overlay-bottom">
