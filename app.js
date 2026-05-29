@@ -269,10 +269,22 @@ async function renderReader() {
   const episode = await dbGet('episodes', state.episodeId);
   const series = await dbGet('series', state.seriesId);
 
-  const header = document.getElementById('reader-header');
-  header.innerHTML = `
-    <button class="header-back" onclick="navigate('episodes',{seriesId:${state.seriesId}})">‹</button>
-    <span class="header-title">${escHtml(episode?.title || '')}</span>`;
+  // Load all episodes for prev/next navigation
+  episodeCache = await dbGetAll('episodes', 'seriesId', state.seriesId);
+  episodeCache.sort((a, b) => a.order - b.order);
+  const epIdx = episodeCache.findIndex(e => e.id === state.episodeId);
+
+  // Overlay titles
+  document.getElementById('reader-series-title').textContent = series?.title || '';
+  document.getElementById('reader-episode-title').textContent = episode?.title || '';
+
+  // Prev/Next buttons
+  document.getElementById('btn-prev-ep').disabled = epIdx <= 0;
+  document.getElementById('btn-next-ep').disabled = epIdx >= episodeCache.length - 1;
+
+  // Hide overlays initially
+  document.getElementById('reader-overlay-top').classList.remove('visible');
+  document.getElementById('reader-overlay-bottom').classList.remove('visible');
 
   const container = document.getElementById('reader-content');
   container.innerHTML = `<div style="text-align:center;padding:40px;color:#666">이미지 로딩중...</div>`;
@@ -285,7 +297,6 @@ async function renderReader() {
     return;
   }
 
-  // Revoke old blob URLs to avoid memory leak
   revokeOldUrls();
 
   const imgs = imageCache.map(img => {
@@ -295,6 +306,27 @@ async function renderReader() {
   }).join('');
 
   container.innerHTML = `<div class="reader-images">${imgs}</div>`;
+
+  // Scroll to top
+  document.getElementById('screen-reader').scrollTop = 0;
+}
+
+let overlayVisible = false;
+function toggleReaderOverlay() {
+  overlayVisible = !overlayVisible;
+  document.getElementById('reader-overlay-top').classList.toggle('visible', overlayVisible);
+  document.getElementById('reader-overlay-bottom').classList.toggle('visible', overlayVisible);
+}
+
+async function navigateEpisode(dir) {
+  episodeCache = await dbGetAll('episodes', 'seriesId', state.seriesId);
+  episodeCache.sort((a, b) => a.order - b.order);
+  const epIdx = episodeCache.findIndex(e => e.id === state.episodeId);
+  const next = episodeCache[epIdx + dir];
+  if (!next) return;
+  state.episodeId = next.id;
+  overlayVisible = false;
+  await renderReader();
 }
 
 let blobUrlsToRevoke = [];
@@ -577,6 +609,18 @@ async function init() {
 
   document.addEventListener('click', e => {
     if (!e.target.closest('#ctx-menu')) hideCtxMenu();
+  });
+
+  // Tap reader content to toggle overlay
+  document.getElementById('reader-content').addEventListener('click', e => {
+    if (state.screen === 'reader') toggleReaderOverlay();
+  });
+
+  // Back button in reader overlay
+  document.getElementById('reader-overlay-top').addEventListener('click', e => {
+    if (e.target.closest('.r-series') || e.target === e.currentTarget) {
+      navigate('episodes', { seriesId: state.seriesId });
+    }
   });
 
   checkInstallBanner();

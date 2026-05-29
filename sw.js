@@ -1,4 +1,4 @@
-const CACHE_NAME = 'webtoon-v1';
+const CACHE_NAME = 'webtoon-v3';
 const ASSETS = [
   '/webtoon-pwa/',
   '/webtoon-pwa/index.html',
@@ -20,8 +20,23 @@ self.addEventListener('activate', e => {
   self.clients.claim();
 });
 
+// Network-first for app shell so updates apply without reinstall
 self.addEventListener('fetch', e => {
-  e.respondWith(
-    caches.match(e.request).then(cached => cached || fetch(e.request).catch(() => cached))
-  );
+  const url = new URL(e.request.url);
+  const isAppShell = ASSETS.some(a => url.pathname === a || url.pathname.endsWith(a.replace('/webtoon-pwa', '')));
+  if (isAppShell) {
+    e.respondWith(
+      fetch(e.request)
+        .then(res => {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
+          return res;
+        })
+        .catch(() => caches.match(e.request))
+    );
+  } else {
+    e.respondWith(
+      caches.match(e.request).then(cached => cached || fetch(e.request))
+    );
+  }
 });

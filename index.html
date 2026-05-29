@@ -38,8 +38,15 @@
 
   <!-- ── READER ── -->
   <div id="screen-reader" class="screen hidden">
-    <div id="reader-header" class="header"></div>
+    <div id="reader-overlay-top" class="reader-overlay-top">
+      <div class="r-series" id="reader-series-title"></div>
+      <div class="r-episode" id="reader-episode-title"></div>
+    </div>
     <div id="reader-content"></div>
+    <div id="reader-overlay-bottom" class="reader-overlay-bottom">
+      <button class="r-nav-btn prev" id="btn-prev-ep" onclick="navigateEpisode(-1)">‹ 이전화</button>
+      <button class="r-nav-btn next" id="btn-next-ep" onclick="navigateEpisode(1)">다음화 ›</button>
+    </div>
   </div>
 
   <!-- FAB -->
