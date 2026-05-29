@@ -164,8 +164,10 @@ async function render() {
   }
 }
 
-// 시리즈의 첫 번째 이미지를 IndexedDB에서 직접 가져옴
+// 시리즈 커버: 커스텀 표지가 있으면 우선 사용, 없으면 첫 이미지
 async function getSeriesCoverUrl(seriesId) {
+  const series = await dbGet('series', seriesId);
+  if (series?.coverUrl && series.coverUrl.startsWith('data:')) return series.coverUrl;
   const eps = await dbGetAll('episodes', 'seriesId', seriesId);
   if (!eps.length) return null;
   eps.sort((a, b) => a.order - b.order);
@@ -470,7 +472,9 @@ async function saveNewTag() {
   if (!name) return;
   const existing = await dbGetAll('tags');
   if (existing.find(t => t.name.trim() === name)) {
-    await showConfirm('같은 태그가 있어요', `"${name}" 태그가 이미 있어요.\n다른 이름을 사용해 주세요.`);
+    hideModal('modal-add-tag');
+    await showConfirm('같은 태그가 있어요', `"${name}" 태그가 이미 있어요.\n다른 이름을 사용해 주세요.`, '확인', 'background:var(--accent);color:#000');
+    showModal('modal-add-tag');
     return;
   }
   await dbAdd('tags', { name, createdAt: Date.now() });
@@ -503,7 +507,9 @@ async function saveSeries() {
 
   const existing = await dbGetAll('series');
   if (existing.find(s => s.title.trim() === title)) {
-    await showConfirm('같은 이름이 있어요', `"${title}" 이름의 시리즈가 이미 있어요.\n다른 이름을 사용해 주세요.`);
+    hideModal('modal-add-series');
+    await showConfirm('같은 이름이 있어요', `"${title}" 이름의 시리즈가 이미 있어요.\n다른 이름을 사용해 주세요.`, '확인', 'background:var(--accent);color:#000');
+    showModal('modal-add-series');
     return;
   }
 
@@ -877,9 +883,12 @@ async function ctxDelete() {
 
 // ── CUSTOM DIALOGS ────────────────────────────────────────────────────────────
 let _confirmResolve = null;
-function showConfirm(title, msg) {
+function showConfirm(title, msg, okLabel = '삭제', okStyle = 'background:var(--danger);color:#fff') {
   document.getElementById('confirm-title').textContent = title;
   document.getElementById('confirm-msg').textContent = msg;
+  const btn = document.getElementById('confirm-ok-btn');
+  btn.textContent = okLabel;
+  btn.style.cssText = okStyle;
   showModal('modal-confirm');
   return new Promise(res => { _confirmResolve = res; });
 }
