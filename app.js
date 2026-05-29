@@ -523,7 +523,7 @@ async function init() {
   db = await openDB();
 
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+    navigator.serviceWorker.register('/webtoon-pwa/sw.js').catch(() => {});
   }
 
   // Event listeners
