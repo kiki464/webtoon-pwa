@@ -268,7 +268,7 @@ async function renderEpisodes() {
   header.innerHTML = `
     <button class="header-back" onclick="navigate('home')">‹</button>
     <span class="header-title">${escHtml(series.title)}</span>
-    <button class="header-action tag-btn" onclick="openSeriesTagModal()" style="background:var(--surface2);color:var(--accent);margin-right:6px">🏷️</button>
+    <button class="header-tag-btn" onclick="openSeriesTagModal()">🏷️ 태그</button>
     <button class="header-action" onclick="openAddEpisodeModal()">+ 추가</button>`;
 
   episodeCache = await dbGetAll('episodes', 'seriesId', state.seriesId);
@@ -496,35 +496,53 @@ async function toggleSeriesTag(id) {
 }
 
 // ── TAG DELETE ────────────────────────────────────────────────────────────────
+let selectedDeleteTagIds = new Set();
+
 async function openDeleteTagModal() {
   tagsCache = await dbGetAll('tags');
-  const wrap = document.getElementById('tag-delete-list');
-  if (!tagsCache.length) {
-    wrap.innerHTML = '<p style="color:var(--text2);font-size:14px;text-align:center;padding:12px">태그가 없어요.</p>';
-  } else {
-    wrap.innerHTML = tagsCache.map(t =>
-      `<div class="tag-delete-row">
-        <span class="tag-chip" style="--tc:${tagColor(t.id)}">${escHtml(t.name)}</span>
-        <button class="tag-delete-btn" onclick="deleteTag(${t.id})">🗑️</button>
-      </div>`
-    ).join('');
-  }
+  selectedDeleteTagIds = new Set();
+  renderDeleteTagList();
   showModal('modal-delete-tags');
 }
 
-async function deleteTag(id) {
-  const tag = tagsCache.find(t => t.id === id);
-  const ok = await showConfirm('태그 삭제', `"${tag?.name}" 태그를 삭제할까요?\n이 태그가 달린 시리즈에서도 제거돼요.`);
+function renderDeleteTagList() {
+  const wrap = document.getElementById('tag-delete-list');
+  if (!tagsCache.length) {
+    wrap.innerHTML = '<p style="color:var(--text2);font-size:14px;text-align:center;padding:12px">태그가 없어요.</p>';
+    document.getElementById('tag-delete-confirm-btn').style.display = 'none';
+    return;
+  }
+  wrap.innerHTML = tagsCache.map(t => {
+    const sel = selectedDeleteTagIds.has(t.id);
+    return `<div class="tag-delete-row${sel ? ' selected' : ''}" onclick="toggleDeleteTag(${t.id})">
+      <span class="tag-chip" style="--tc:${tagColor(t.id)}">${escHtml(t.name)}</span>
+      <span class="tag-delete-check">${sel ? '✓' : ''}</span>
+    </div>`;
+  }).join('');
+  document.getElementById('tag-delete-confirm-btn').style.display = selectedDeleteTagIds.size > 0 ? '' : 'none';
+}
+
+function toggleDeleteTag(id) {
+  if (selectedDeleteTagIds.has(id)) selectedDeleteTagIds.delete(id);
+  else selectedDeleteTagIds.add(id);
+  renderDeleteTagList();
+}
+
+async function confirmDeleteTags() {
+  if (!selectedDeleteTagIds.size) return;
+  const names = [...selectedDeleteTagIds].map(id => tagsCache.find(t => t.id === id)?.name).filter(Boolean).join(', ');
+  const ok = await showConfirm('태그 삭제', `"${names}" 태그를 삭제할까요?\n연결된 시리즈에서도 제거돼요.`);
   if (!ok) { await openDeleteTagModal(); return; }
-  await dbDelete('tags', id);
-  // 모든 시리즈에서 해당 태그 제거
-  const allSeries = await dbGetAll('series');
-  for (const s of allSeries) {
-    if ((s.tagIds || []).includes(id)) {
-      await dbPut('series', { ...s, tagIds: s.tagIds.filter(t => t !== id) });
+  for (const id of selectedDeleteTagIds) {
+    await dbDelete('tags', id);
+    const allSeries = await dbGetAll('series');
+    for (const s of allSeries) {
+      if ((s.tagIds || []).includes(id)) {
+        await dbPut('series', { ...s, tagIds: s.tagIds.filter(t => t !== id) });
+      }
     }
   }
-  await openDeleteTagModal();
+  hideModal('modal-delete-tags');
 }
 
 // ── TAGS ─────────────────────────────────────────────────────────────────────

@@ -132,9 +132,11 @@
   <div id="modal-delete-tags" class="modal-backdrop">
     <div class="modal">
       <h3>🗑️ 태그 삭제</h3>
-      <div id="tag-delete-list" style="display:flex;flex-direction:column;gap:10px;margin-bottom:4px"></div>
-      <div class="modal-actions">
-        <button class="btn btn-confirm" onclick="hideModal('modal-delete-tags')">완료</button>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:12px">삭제할 태그를 선택하세요</p>
+      <div id="tag-delete-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:4px"></div>
+      <div class="modal-actions" style="flex-direction:column;gap:8px">
+        <button id="tag-delete-confirm-btn" class="btn btn-confirm" style="background:var(--danger);color:#fff;display:none" onclick="confirmDeleteTags()">선택한 태그 삭제</button>
+        <button class="btn btn-cancel" onclick="hideModal('modal-delete-tags')">취소</button>
       </div>
     </div>
   </div>
