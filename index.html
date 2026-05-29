@@ -26,10 +26,13 @@
 
   <!-- ── HOME ── -->
   <div id="screen-home" class="screen hidden">
-    <div id="home-header" class="header"></div>
-    <div class="search-bar-wrap">
-      <input type="search" id="search-input" class="search-input" placeholder="🔍  시리즈 검색..." oninput="onSearch(this.value)" autocomplete="off" autocorrect="off" spellcheck="false">
+    <div id="home-header" class="header">
+      <span class="header-logo" onclick="goHomeReset()" style="cursor:pointer">📚 내 웹툰</span>
     </div>
+    <div class="search-bar-wrap">
+      <input type="search" id="search-input" class="search-input" placeholder="🔍  시리즈 검색..." oninput="onSearch()" onfocus="onSearchFocus()" autocomplete="off" autocorrect="off" spellcheck="false">
+    </div>
+    <div id="tag-filter-bar" class="tag-filter-bar"></div>
     <div id="home-content"></div>
   </div>
 
@@ -66,12 +69,19 @@
   <!-- ── MODAL: 시리즈 추가 ── -->
   <div id="modal-add-series" class="modal-backdrop">
     <div class="modal">
-      <h3>📚 새 시리즈 만들기</h3>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h3 style="margin:0">📚 새 시리즈 만들기</h3>
+        <button class="tag-add-btn" onclick="openAddTagModal()">🏷️ 태그 추가</button>
+      </div>
 
       <label>시리즈 이름</label>
       <input type="text" id="series-name-input" placeholder="예) 내 그림 모음, 여행 사진..." maxlength="40">
 
-      <div style="height:14px"></div>
+      <div style="height:12px"></div>
+      <label>태그 선택</label>
+      <div id="series-tag-selector" class="tag-chips-wrap" style="margin-top:6px"></div>
+
+      <div style="height:12px"></div>
       <label>첫 번째 이미지 (선택)</label>
       <div id="series-pick-area" class="file-pick-area">
         <div class="fp-icon">🖼️</div>
@@ -83,6 +93,19 @@
       <div class="modal-actions">
         <button class="btn btn-cancel" onclick="hideModal('modal-add-series')">취소</button>
         <button class="btn btn-confirm" onclick="saveSeries()">만들기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MODAL: 태그 만들기 ── -->
+  <div id="modal-add-tag" class="modal-backdrop">
+    <div class="modal">
+      <h3>🏷️ 새 태그 만들기</h3>
+      <label>태그 이름</label>
+      <input type="text" id="new-tag-input" placeholder="예) 액션, 로맨스, 내 그림..." maxlength="20">
+      <div class="modal-actions">
+        <button class="btn btn-cancel" onclick="hideModal('modal-add-tag')">취소</button>
+        <button class="btn btn-confirm" onclick="saveNewTag()">만들기</button>
       </div>
     </div>
   </div>

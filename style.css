@@ -324,6 +324,36 @@ html, body {
 }
 .progress-bar.hidden { display: none; }
 
+/* ── TAGS ── */
+.tag-add-btn {
+  background: rgba(255,255,255,.08); border: none; color: var(--text);
+  border-radius: 20px; padding: 6px 12px; font-size: 13px; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+}
+.tag-chips-wrap {
+  display: flex; flex-wrap: wrap; gap: 8px; min-height: 32px; align-items: center;
+}
+.tag-chip {
+  background: rgba(255,255,255,.07); border: 1.5px solid var(--tc, var(--accent));
+  color: var(--text); border-radius: 20px; padding: 5px 12px;
+  font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  transition: background .15s;
+}
+.tag-chip.active { background: var(--tc, var(--accent)); color: #000; }
+
+.tag-filter-bar {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  padding: 0 12px 10px; max-height: 0; overflow: hidden;
+  transition: max-height .25s ease, padding .25s ease;
+}
+.tag-filter-bar.visible { max-height: 200px; padding: 4px 12px 10px; }
+.tag-filter-btn {
+  background: rgba(255,255,255,.07); border: 1.5px solid var(--tc, var(--accent));
+  color: var(--text); border-radius: 20px; padding: 6px 14px;
+  font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.tag-filter-btn.active { background: var(--tc, var(--accent)); color: #000; }
+
 /* ── SEARCH ── */
 .search-bar-wrap { padding: 10px 12px 4px; flex-shrink: 0; }
 .search-input {

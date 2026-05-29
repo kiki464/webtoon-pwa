@@ -1,5 +1,5 @@
 // ── DB ──────────────────────────────────────────────────────────────────────
-const DB_NAME = 'webtoon-db', DB_VER = 1;
+const DB_NAME = 'webtoon-db', DB_VER = 2;
 let db;
 
 function openDB() {
@@ -18,6 +18,9 @@ function openDB() {
       if (!d.objectStoreNames.contains('images')) {
         const img = d.createObjectStore('images', { keyPath: 'id', autoIncrement: true });
         img.createIndex('episodeId', 'episodeId');
+      }
+      if (!d.objectStoreNames.contains('tags')) {
+        d.createObjectStore('tags', { keyPath: 'id', autoIncrement: true });
       }
     };
     req.onsuccess = e => res(e.target.result);
@@ -127,8 +130,14 @@ let state = { screen: 'home', seriesId: null, episodeId: null };
 let seriesCache = [];
 let episodeCache = [];
 let imageCache = [];
+let tagsCache = [];
 let pendingFiles = null;
 let longPressTimer = null;
+let activeTagIds = new Set(); // 현재 선택된 태그 필터
+let selectedTagIdsForNew = new Set(); // 새 시리즈 만들기에서 선택된 태그
+
+const TAG_COLORS = ['#00d4aa','#7b5ea7','#ff6b6b','#ffd166','#06d6a0','#118ab2','#ef476f','#f77f00'];
+function tagColor(id) { return TAG_COLORS[id % TAG_COLORS.length]; }
 
 // ── ROUTING ──────────────────────────────────────────────────────────────────
 function navigate(screen, params = {}) {
@@ -187,9 +196,6 @@ async function renderHome() {
   seriesCache = await dbGetAll('series');
   seriesCache.sort((a, b) => b.createdAt - a.createdAt);
 
-  const header = document.getElementById('home-header');
-  header.innerHTML = `<span class="header-logo">📚 내 웹툰</span>`;
-
   const container = document.getElementById('home-content');
 
   if (!seriesCache.length) {
@@ -207,11 +213,14 @@ async function renderHome() {
   const epCount = {};
   allEps.forEach(ep => { epCount[ep.seriesId] = (epCount[ep.seriesId] || 0) + 1; });
 
+  await renderTagFilterBar();
+
   // 플레이스홀더로 먼저 렌더링
   const grid = seriesCache.map(s => {
     const count = epCount[s.id] || 0;
+    const tagIds = JSON.stringify(s.tagIds || []);
     return `
-      <div class="series-card" data-id="${s.id}"
+      <div class="series-card" data-id="${s.id}" data-tags='${tagIds}'
            onclick="navigate('episodes',{seriesId:${s.id}})"
            oncontextmenu="showCtxMenu(event,'series',${s.id})"
       >
@@ -227,18 +236,6 @@ async function renderHome() {
     <div class="section-title">전체 시리즈</div>
     <div class="series-grid">${grid}</div>`;
 
-  // 이미지 비동기 로드
-  for (const s of seriesCache) {
-    const url = await getSeriesCoverUrl(s.id);
-    if (url) {
-      thumbBlobUrls.push(url);
-      const el = document.getElementById(`cover-${s.id}`);
-      if (el) {
-        el.outerHTML = `<img class="cover" src="${url}">`;
-      }
-    }
-  }
-
   container.querySelectorAll('.series-card').forEach(card => {
     card.addEventListener('touchstart', e => {
       const id = +card.dataset.id;
@@ -247,6 +244,17 @@ async function renderHome() {
     card.addEventListener('touchend', () => clearTimeout(longPressTimer), { passive: true });
     card.addEventListener('touchmove', () => clearTimeout(longPressTimer), { passive: true });
   });
+
+  // 이미지 비동기 로드 후 필터 적용
+  for (const s of seriesCache) {
+    const url = await getSeriesCoverUrl(s.id);
+    if (url) {
+      thumbBlobUrls.push(url);
+      const el = document.getElementById(`cover-${s.id}`);
+      if (el) el.outerHTML = `<img class="cover" src="${url}">`;
+    }
+  }
+  applyFilter();
 }
 
 async function renderEpisodes() {
@@ -392,11 +400,13 @@ function revokeOldUrls() {
 }
 
 // ── MODALS ───────────────────────────────────────────────────────────────────
-function openAddSeriesModal() {
+async function openAddSeriesModal() {
   pendingFiles = null;
+  selectedTagIdsForNew = new Set();
   document.getElementById('series-name-input').value = '';
   document.getElementById('series-file-count').textContent = '';
   document.getElementById('series-file-input').value = '';
+  await refreshSeriesTagSelector();
   showModal('modal-add-series');
 }
 
@@ -416,12 +426,51 @@ function hideModal(id) {
   document.getElementById(id).classList.remove('show');
 }
 
+// ── TAGS ─────────────────────────────────────────────────────────────────────
+function openAddTagModal() {
+  document.getElementById('new-tag-input').value = '';
+  showModal('modal-add-tag');
+  setTimeout(() => document.getElementById('new-tag-input').focus(), 300);
+}
+
+async function saveNewTag() {
+  const name = document.getElementById('new-tag-input').value.trim();
+  if (!name) return;
+  await dbAdd('tags', { name, createdAt: Date.now() });
+  hideModal('modal-add-tag');
+  await refreshSeriesTagSelector();
+}
+
+async function refreshSeriesTagSelector() {
+  tagsCache = await dbGetAll('tags');
+  const wrap = document.getElementById('series-tag-selector');
+  if (!tagsCache.length) { wrap.innerHTML = '<span style="color:var(--text2);font-size:13px">태그 없음 — 오른쪽 상단에서 추가</span>'; return; }
+  wrap.innerHTML = tagsCache.map(t =>
+    `<button class="tag-chip${selectedTagIdsForNew.has(t.id) ? ' active' : ''}" data-id="${t.id}"
+      style="--tc:${tagColor(t.id)}" onclick="toggleNewSeriesTag(${t.id})">${escHtml(t.name)}</button>`
+  ).join('');
+}
+
+function toggleNewSeriesTag(id) {
+  if (selectedTagIdsForNew.has(id)) selectedTagIdsForNew.delete(id);
+  else selectedTagIdsForNew.add(id);
+  document.querySelectorAll('#series-tag-selector .tag-chip').forEach(btn => {
+    btn.classList.toggle('active', selectedTagIdsForNew.has(+btn.dataset.id));
+  });
+}
+
 // ── SAVE SERIES ──────────────────────────────────────────────────────────────
 async function saveSeries() {
   const title = document.getElementById('series-name-input').value.trim();
   if (!title) { alert('시리즈 이름을 입력해주세요'); return; }
 
-  const id = await dbAdd('series', { title, coverUrl: null, createdAt: Date.now() });
+  const existing = await dbGetAll('series');
+  if (existing.find(s => s.title.trim() === title)) {
+    await showConfirm('같은 이름이 있어요', `"${title}" 이름의 시리즈가 이미 있어요.\n다른 이름을 사용해 주세요.`);
+    return;
+  }
+
+  const id = await dbAdd('series', { title, coverUrl: null, tagIds: [...selectedTagIdsForNew], createdAt: Date.now() });
 
   // If files were picked, auto-create first episode
   if (pendingFiles && pendingFiles.length > 0) {
@@ -620,18 +669,52 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// ── SEARCH ───────────────────────────────────────────────────────────────────
-function normalize(str) {
-  return str.replace(/\s+/g, '').toLowerCase();
+// ── SEARCH & TAG FILTER ──────────────────────────────────────────────────────
+function normalize(str) { return str.replace(/\s+/g, '').toLowerCase(); }
+
+function applyFilter() {
+  const q = normalize(document.getElementById('search-input')?.value || '');
+  document.querySelectorAll('.series-card').forEach(card => {
+    const titleMatch = !q || normalize(card.querySelector('.card-title')?.textContent || '').includes(q);
+    let tagMatch = true;
+    if (activeTagIds.size > 0) {
+      const cardTags = JSON.parse(card.dataset.tags || '[]');
+      tagMatch = [...activeTagIds].every(tid => cardTags.includes(tid));
+    }
+    card.style.display = (titleMatch && tagMatch) ? '' : 'none';
+  });
 }
 
-function onSearch(query) {
-  const q = normalize(query);
-  const cards = document.querySelectorAll('.series-card');
-  cards.forEach(card => {
-    const title = normalize(card.querySelector('.card-title')?.textContent || '');
-    card.style.display = (!q || title.includes(q)) ? '' : 'none';
+function onSearch() { applyFilter(); }
+
+function onSearchFocus() {
+  document.getElementById('tag-filter-bar').classList.add('visible');
+}
+
+function toggleTagFilter(id) {
+  if (activeTagIds.has(id)) activeTagIds.delete(id);
+  else activeTagIds.add(id);
+  // 버튼 active 상태 업데이트
+  document.querySelectorAll('.tag-filter-btn').forEach(btn => {
+    const tid = +btn.dataset.id;
+    btn.classList.toggle('active', activeTagIds.has(tid));
   });
+  applyFilter();
+}
+
+function goHomeReset() {
+  activeTagIds.clear();
+  navigate('home');
+}
+
+async function renderTagFilterBar() {
+  tagsCache = await dbGetAll('tags');
+  const bar = document.getElementById('tag-filter-bar');
+  if (!tagsCache.length) { bar.innerHTML = ''; return; }
+  bar.innerHTML = tagsCache.map(t =>
+    `<button class="tag-filter-btn${activeTagIds.has(t.id) ? ' active' : ''}" data-id="${t.id}"
+      style="--tc:${tagColor(t.id)}" onclick="toggleTagFilter(${t.id})">${escHtml(t.name)}</button>`
+  ).join('');
 }
 
 // ── INSTALL BANNER ────────────────────────────────────────────────────────────
