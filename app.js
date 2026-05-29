@@ -139,6 +139,18 @@ let selectedTagIdsForNew = new Set(); // 새 시리즈 만들기에서 선택된
 const TAG_COLORS = ['#00d4aa','#7b5ea7','#ff6b6b','#ffd166','#06d6a0','#118ab2','#ef476f','#f77f00'];
 function tagColor(id) { return TAG_COLORS[id % TAG_COLORS.length]; }
 
+let currentTab = 'normal'; // 'normal' | 'adult'
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('tab-normal').classList.toggle('active', tab === 'normal');
+  document.getElementById('tab-adult').classList.toggle('active', tab === 'adult');
+  activeTagIds.clear();
+  document.getElementById('search-input').value = '';
+  document.getElementById('tag-filter-bar').classList.remove('visible');
+  renderHome();
+}
+
 // ── ROUTING ──────────────────────────────────────────────────────────────────
 function navigate(screen, params = {}) {
   state = { screen, ...params };
@@ -196,6 +208,7 @@ async function renderHome() {
   const searchEl = document.getElementById('search-input');
   if (searchEl) searchEl.value = '';
   seriesCache = await dbGetAll('series');
+  seriesCache = seriesCache.filter(s => currentTab === 'adult' ? s.isAdult === true : s.isAdult !== true);
   seriesCache.sort((a, b) => b.createdAt - a.createdAt);
 
   const container = document.getElementById('home-content');
@@ -1036,8 +1049,16 @@ function showCtxAt(x, y, type, id) {
   menu.style.top = top + 'px';
 
   document.getElementById('ctx-cover').style.display = type === 'series' ? 'flex' : 'none';
+  document.getElementById('ctx-adult-toggle').style.display = type === 'series' ? 'flex' : 'none';
   document.getElementById('ctx-rename').style.display = 'flex';
   document.getElementById('ctx-delete').style.display = 'flex';
+
+  // 성인 토글 버튼 텍스트 업데이트
+  if (type === 'series') {
+    const s = seriesCache.find(s => s.id === id);
+    const isAdult = s?.isAdult === true;
+    document.getElementById('ctx-adult-toggle').textContent = isAdult ? '✅ 일반으로 설정' : '🔞 성인으로 설정';
+  }
 }
 
 function hideCtxMenu() {
@@ -1062,6 +1083,15 @@ async function ctxRename() {
   const item = await dbGet(store, id);
   await dbPut(store, { ...item, title: name.trim() });
   render();
+}
+
+async function ctxToggleAdult() {
+  const target = ctxTarget;
+  hideCtxMenu();
+  if (!target || target.type !== 'series') return;
+  const series = await dbGet('series', target.id);
+  await dbPut('series', { ...series, isAdult: !series.isAdult });
+  await renderHome();
 }
 
 async function ctxDelete() {
@@ -1158,6 +1188,9 @@ function toggleTagFilter(id) {
 
 function goHomeReset() {
   activeTagIds.clear();
+  currentTab = 'normal';
+  document.getElementById('tab-normal')?.classList.add('active');
+  document.getElementById('tab-adult')?.classList.remove('active');
   navigate('home');
 }
 

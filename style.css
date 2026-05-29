@@ -59,6 +59,19 @@ html, body {
 .screen { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
 .screen.hidden { display: none; }
 
+/* ── CATEGORY TABS ── */
+.category-tabs {
+  display: flex; gap: 0; padding: 10px 12px 2px; flex-shrink: 0;
+}
+.cat-tab {
+  flex: 1; padding: 10px; border: none; border-radius: 0; font-size: 15px;
+  font-weight: 700; cursor: pointer; background: var(--surface2); color: var(--text2);
+  transition: background .15s, color .15s;
+}
+.cat-tab:first-child { border-radius: 10px 0 0 10px; }
+.cat-tab:last-child { border-radius: 0 10px 10px 0; }
+.cat-tab.active { background: var(--accent); color: #000; }
+
 /* ── HOME ── */
 .section-title {
   font-size: 13px; font-weight: 700; color: var(--text2);

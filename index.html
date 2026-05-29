@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="icon-192.png">
 
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="style.css?v=25">
+  <link rel="stylesheet" href="style.css?v=26">
   <title>내 웹툰</title>
 </head>
 <body>
@@ -28,6 +28,10 @@
   <div id="screen-home" class="screen hidden">
     <div id="home-header" class="header">
       <span class="header-logo" onclick="goHomeReset()" style="cursor:pointer">📚 내 웹툰</span>
+    </div>
+    <div class="category-tabs">
+      <button id="tab-normal" class="cat-tab active" onclick="switchTab('normal')">일반</button>
+      <button id="tab-adult" class="cat-tab" onclick="switchTab('adult')">🔞 성인</button>
     </div>
     <div class="search-bar-wrap">
       <input type="search" id="search-input" class="search-input" placeholder="🔍  시리즈 검색..." oninput="onSearch()" onfocus="onSearchFocus()" autocomplete="off" autocorrect="off" spellcheck="false">
@@ -168,6 +172,7 @@
   <!-- ── CONTEXT MENU ── -->
   <div id="ctx-menu" class="ctx-menu">
     <div id="ctx-cover" class="ctx-item" onclick="ctxChangeCover()">🖼️ 표지 변경하기</div>
+    <div id="ctx-adult-toggle" class="ctx-item" onclick="ctxToggleAdult()">🔞 성인으로 설정</div>
     <div id="ctx-rename" class="ctx-item" onclick="ctxRename()">✏️ 이름 변경</div>
     <div id="ctx-delete" class="ctx-item danger" onclick="ctxDelete()">🗑️ 삭제</div>
   </div>
@@ -212,6 +217,6 @@
   </div>
 
 </div>
-<script src="app.js?v=25"></script>
+<script src="app.js?v=26"></script>
 </body>
 </html>
