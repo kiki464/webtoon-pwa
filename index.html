@@ -104,6 +104,31 @@
     <div id="ctx-delete" class="ctx-item danger" onclick="ctxDelete()">🗑️ 삭제</div>
   </div>
 
+  <!-- ── CONFIRM MODAL ── -->
+  <div id="modal-confirm" class="modal-backdrop">
+    <div class="modal">
+      <h3 id="confirm-title">삭제할까요?</h3>
+      <p id="confirm-msg" style="color:var(--text2);font-size:14px;line-height:1.6;margin-bottom:4px"></p>
+      <div class="modal-actions">
+        <button class="btn btn-cancel" onclick="confirmResolve(false)">취소</button>
+        <button class="btn btn-confirm danger" style="background:var(--danger);color:#fff" onclick="confirmResolve(true)">삭제</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── RENAME MODAL ── -->
+  <div id="modal-rename" class="modal-backdrop">
+    <div class="modal">
+      <h3>✏️ 이름 변경</h3>
+      <label id="rename-label">이름</label>
+      <input type="text" id="rename-input" maxlength="40" style="margin-top:6px">
+      <div class="modal-actions">
+        <button class="btn btn-cancel" onclick="renameResolve(null)">취소</button>
+        <button class="btn btn-confirm" onclick="renameResolve(document.getElementById('rename-input').value)">확인</button>
+      </div>
+    </div>
+  </div>
+
 </div>
 <script src="app.js"></script>
 </body>

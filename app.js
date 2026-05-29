@@ -466,7 +466,7 @@ async function ctxRename() {
     ? seriesCache.find(s => s.id === id)?.title
     : episodeCache.find(e => e.id === id)?.title;
 
-  const name = prompt(label + ' 변경', current || '');
+  const name = await showRename(label, current || '');
   if (!name || !name.trim()) return;
 
   const store = type === 'series' ? 'series' : 'episodes';
@@ -480,7 +480,8 @@ async function ctxDelete() {
   if (!ctxTarget) return;
   const { type, id } = ctxTarget;
   const label = type === 'series' ? '이 시리즈' : '이 회차';
-  if (!confirm(`${label}를 삭제할까요? 이미지도 모두 삭제됩니다.`)) return;
+  const ok = await showConfirm('삭제할까요?', `${label}를 삭제하면 이미지도 모두 삭제됩니다.`);
+  if (!ok) return;
 
   if (type === 'series') {
     // delete all episodes and images
@@ -496,6 +497,32 @@ async function ctxDelete() {
     await dbDelete('episodes', id);
     await renderEpisodes();
   }
+}
+
+// ── CUSTOM DIALOGS ────────────────────────────────────────────────────────────
+let _confirmResolve = null;
+function showConfirm(title, msg) {
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-msg').textContent = msg;
+  showModal('modal-confirm');
+  return new Promise(res => { _confirmResolve = res; });
+}
+function confirmResolve(val) {
+  hideModal('modal-confirm');
+  if (_confirmResolve) { _confirmResolve(val); _confirmResolve = null; }
+}
+
+let _renameResolve = null;
+function showRename(label, current) {
+  document.getElementById('rename-label').textContent = label;
+  document.getElementById('rename-input').value = current || '';
+  showModal('modal-rename');
+  setTimeout(() => document.getElementById('rename-input').focus(), 300);
+  return new Promise(res => { _renameResolve = res; });
+}
+function renameResolve(val) {
+  hideModal('modal-rename');
+  if (_renameResolve) { _renameResolve(val); _renameResolve = null; }
 }
 
 // ── UTILS ─────────────────────────────────────────────────────────────────────
