@@ -371,10 +371,10 @@ html, body {
 
 .tag-filter-bar {
   display: flex; flex-wrap: wrap; gap: 8px;
-  padding: 0 12px 10px; max-height: 0; overflow: hidden;
+  padding: 0 12px; max-height: 0; overflow: hidden;
   transition: max-height .25s ease, padding .25s ease;
 }
-.tag-filter-bar.visible { max-height: 200px; padding: 4px 12px 10px; }
+.tag-filter-bar.visible { max-height: 200px; padding: 6px 12px 10px; }
 .tag-filter-btn {
   background: rgba(255,255,255,.07); border: 1.5px solid var(--tc, var(--accent));
   color: var(--text); border-radius: 20px; padding: 6px 14px;
