@@ -131,7 +131,8 @@ html, body {
 }
 .ep-meta { padding: 14px 16px 4px; }
 .ep-meta h2 { font-size: 20px; font-weight: 800; }
-.ep-meta p { font-size: 13px; color: var(--text2); margin-top: 4px; }
+.ep-meta p { font-size: 13px; color: var(--text2); }
+.ep-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 
 .ep-list { padding: 8px 12px 24px; display: flex; flex-direction: column; gap: 8px; }
 
@@ -214,6 +215,24 @@ html, body {
 #screen-reader::-webkit-scrollbar-track { background: rgba(255,255,255,.05); }
 #screen-reader::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 2px; }
 #screen-reader { scrollbar-width: thin; scrollbar-color: var(--accent) transparent; }
+
+/* ── FAB SPEED DIAL ── */
+.fab-backdrop {
+  position: fixed; inset: 0; z-index: 98;
+}
+.fab-menu {
+  position: fixed; bottom: 90px; right: 20px; z-index: 99;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+}
+.fab-menu.hidden { display: none; }
+.fab-backdrop.hidden { display: none; }
+.fab-menu-item {
+  background: var(--surface2); color: var(--text);
+  border: none; border-radius: 24px; padding: 12px 20px;
+  font-size: 15px; font-weight: 700; cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0,0,0,.4);
+  white-space: nowrap;
+}
 
 /* ── FAB ── */
 .fab {
@@ -371,10 +390,9 @@ html, body {
 /* ── COVER EDITOR ── */
 .cover-editor-backdrop {
   position: fixed; inset: 0; background: #000; z-index: 400;
-  display: flex; flex-direction: column;
-  opacity: 0; pointer-events: none; transition: opacity .2s;
+  display: none; flex-direction: column;
 }
-.cover-editor-backdrop.show { opacity: 1; pointer-events: all; }
+.cover-editor-backdrop.show { display: flex; }
 
 .cover-editor-header {
   display: flex; align-items: center; justify-content: space-between;

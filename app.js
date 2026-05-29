@@ -292,12 +292,24 @@ async function renderEpisodes() {
           </div>`;
       }).join('');
 
+  // 시리즈 태그 렌더링
+  tagsCache = await dbGetAll('tags');
+  const seriesTags = (series.tagIds || [])
+    .map(id => tagsCache.find(t => t.id === id))
+    .filter(Boolean);
+  const tagsHtml = seriesTags.length
+    ? `<div class="ep-tags">${seriesTags.map(t =>
+        `<span class="tag-chip" style="--tc:${tagColor(t.id)}">${escHtml(t.name)}</span>`
+      ).join('')}</div>`
+    : '';
+
   const container = document.getElementById('ep-content');
   container.innerHTML = `
     <div class="ep-header-cover-empty" id="series-cover-img">📚</div>
     <div class="ep-meta">
       <h2>${escHtml(series.title)}</h2>
-      <p>${episodeCache.length}화 등록됨</p>
+      ${tagsHtml}
+      <p style="margin-top:6px">${episodeCache.length}화 등록됨</p>
     </div>
     <div class="ep-list">${epItems}</div>`;
 
@@ -426,6 +438,26 @@ function hideModal(id) {
   document.getElementById(id).classList.remove('show');
 }
 
+// ── FAB MENU ──────────────────────────────────────────────────────────────────
+let fabMenuOpen = false;
+function toggleFabMenu() {
+  fabMenuOpen = !fabMenuOpen;
+  document.getElementById('fab-menu').classList.toggle('hidden', !fabMenuOpen);
+  document.getElementById('fab-backdrop').classList.toggle('hidden', !fabMenuOpen);
+  document.getElementById('fab').style.transform = fabMenuOpen ? 'rotate(45deg)' : '';
+}
+function closeFabMenu() {
+  fabMenuOpen = false;
+  document.getElementById('fab-menu').classList.add('hidden');
+  document.getElementById('fab-backdrop').classList.add('hidden');
+  document.getElementById('fab').style.transform = '';
+}
+function fabMenuSelect(type) {
+  closeFabMenu();
+  if (type === 'series') openAddSeriesModal();
+  else if (type === 'tag') openAddTagModal();
+}
+
 // ── TAGS ─────────────────────────────────────────────────────────────────────
 function openAddTagModal() {
   document.getElementById('new-tag-input').value = '';
@@ -436,6 +468,11 @@ function openAddTagModal() {
 async function saveNewTag() {
   const name = document.getElementById('new-tag-input').value.trim();
   if (!name) return;
+  const existing = await dbGetAll('tags');
+  if (existing.find(t => t.name.trim() === name)) {
+    await showConfirm('같은 태그가 있어요', `"${name}" 태그가 이미 있어요.\n다른 이름을 사용해 주세요.`);
+    return;
+  }
   await dbAdd('tags', { name, createdAt: Date.now() });
   hideModal('modal-add-tag');
   await refreshSeriesTagSelector();
@@ -973,7 +1010,7 @@ async function init() {
 
   // Event listeners
   document.getElementById('fab').addEventListener('click', () => {
-    if (state.screen === 'home') openAddSeriesModal();
+    if (state.screen === 'home') toggleFabMenu();
     else if (state.screen === 'episodes') openAddEpisodeModal();
   });
 
