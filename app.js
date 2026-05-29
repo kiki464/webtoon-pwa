@@ -334,14 +334,7 @@ async function renderEpisodes() {
     }
   }
 
-  container.querySelectorAll('.ep-item').forEach(item => {
-    const id = +item.dataset.id;
-    item.addEventListener('touchstart', e => {
-      longPressTimer = setTimeout(() => showCtxMenuTouch(e.touches[0], 'episode', id), 500);
-    }, { passive: true });
-    item.addEventListener('touchend', () => clearTimeout(longPressTimer), { passive: true });
-    item.addEventListener('touchmove', () => clearTimeout(longPressTimer), { passive: true });
-  });
+  initEpDragDrop();
 }
 
 async function renderReader() {
@@ -888,6 +881,133 @@ function onCoverWheel(e) {
   drawCoverCanvas();
 }
 
+// ── EPISODE DRAG & DROP ───────────────────────────────────────────────────────
+let drag = {
+  el: null, ghost: null, id: null,
+  startY: 0, offsetY: 0,
+  fromIdx: 0, toIdx: 0,
+  items: [], rects: []
+};
+
+function initEpDragDrop() {
+  const list = document.querySelector('.ep-list');
+  if (!list) return;
+
+  list.querySelectorAll('.ep-item').forEach((item, idx) => {
+    const id = +item.dataset.id;
+
+    // 컨텍스트 메뉴 (꾹 누르기)
+    item.addEventListener('touchstart', e => {
+      const touch = e.touches[0];
+      drag.startY = touch.clientY;
+      drag.id = id;
+      drag.el = item;
+      drag.fromIdx = idx;
+      drag.toIdx = idx;
+      longPressTimer = setTimeout(() => startDrag(touch), 500);
+    }, { passive: true });
+
+    item.addEventListener('touchmove', e => {
+      if (drag.ghost) {
+        e.preventDefault();
+        moveDrag(e.touches[0]);
+      } else {
+        clearTimeout(longPressTimer);
+      }
+    }, { passive: false });
+
+    item.addEventListener('touchend', e => {
+      clearTimeout(longPressTimer);
+      if (drag.ghost) endDrag();
+    }, { passive: true });
+
+    item.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      showCtxMenu(e, 'episode', id);
+    });
+  });
+}
+
+function startDrag(touch) {
+  const item = drag.el;
+  if (!item) return;
+
+  // 진동 피드백
+  if (navigator.vibrate) navigator.vibrate(30);
+
+  const list = document.querySelector('.ep-list');
+  drag.items = [...list.querySelectorAll('.ep-item')];
+  drag.rects = drag.items.map(el => el.getBoundingClientRect());
+
+  // 고스트 생성
+  const rect = item.getBoundingClientRect();
+  drag.offsetY = touch.clientY - rect.top;
+
+  const ghost = item.cloneNode(true);
+  ghost.style.cssText = `
+    position:fixed; left:${rect.left}px; top:${rect.top}px;
+    width:${rect.width}px; z-index:500; pointer-events:none;
+    opacity:0.92; transform:scale(1.03);
+    box-shadow:0 8px 32px rgba(0,0,0,.5); border-radius:12px;
+    transition:none;
+  `;
+  document.body.appendChild(ghost);
+  drag.ghost = ghost;
+
+  item.style.opacity = '0.3';
+}
+
+function moveDrag(touch) {
+  if (!drag.ghost) return;
+  const y = touch.clientY - drag.offsetY;
+  drag.ghost.style.top = y + 'px';
+
+  // 어느 위치에 삽입할지 계산
+  const centerY = touch.clientY;
+  let newIdx = drag.fromIdx;
+  drag.rects.forEach((rect, i) => {
+    if (i !== drag.fromIdx && centerY > rect.top + rect.height * 0.5) {
+      newIdx = i;
+    }
+  });
+  drag.toIdx = newIdx;
+
+  // 시각적 인디케이터
+  drag.items.forEach((el, i) => {
+    el.style.borderTop = i === drag.toIdx && drag.toIdx !== drag.fromIdx
+      ? '2px solid var(--accent)' : '';
+  });
+}
+
+async function endDrag() {
+  const ghost = drag.ghost;
+  if (!ghost) return;
+
+  ghost.remove();
+  drag.ghost = null;
+
+  if (drag.el) {
+    drag.el.style.opacity = '';
+  }
+  drag.items.forEach(el => el.style.borderTop = '');
+
+  if (drag.fromIdx !== drag.toIdx) {
+    // 순서 저장
+    const reordered = [...episodeCache];
+    const [moved] = reordered.splice(drag.fromIdx, 1);
+    reordered.splice(drag.toIdx, 0, moved);
+    for (let i = 0; i < reordered.length; i++) {
+      if (reordered[i].order !== i) {
+        await dbPut('episodes', { ...reordered[i], order: i });
+      }
+    }
+    await renderEpisodes();
+  }
+
+  drag.el = null;
+  drag.id = null;
+}
+
 // ── CONTEXT MENU ──────────────────────────────────────────────────────────────
 let ctxTarget = null;
 
@@ -1041,11 +1161,15 @@ function goHomeReset() {
 async function renderTagFilterBar() {
   tagsCache = await dbGetAll('tags');
   const bar = document.getElementById('tag-filter-bar');
+  // 태그 필터는 검색창 포커스 시에만 보임 — 렌더 시 항상 숨김
+  bar.classList.remove('visible');
   if (!tagsCache.length) { bar.innerHTML = ''; return; }
   bar.innerHTML = tagsCache.map(t =>
     `<button class="tag-filter-btn${activeTagIds.has(t.id) ? ' active' : ''}" data-id="${t.id}"
       style="--tc:${tagColor(t.id)}" onclick="toggleTagFilter(${t.id})">${escHtml(t.name)}</button>`
   ).join('');
+  // 활성 태그가 있으면 항상 보이게
+  if (activeTagIds.size > 0) bar.classList.add('visible');
 }
 
 // ── INSTALL BANNER ────────────────────────────────────────────────────────────

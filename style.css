@@ -25,11 +25,12 @@ html, body {
 
 /* ── HEADER ── */
 .header {
-  height: var(--header-h);
+  min-height: var(--header-h);
   background: var(--surface);
   display: flex;
   align-items: center;
   padding: 0 16px;
+  padding-top: max(env(safe-area-inset-top), 12px);
   gap: 12px;
   border-bottom: 1px solid rgba(255,255,255,.06);
   flex-shrink: 0;
@@ -147,8 +148,9 @@ html, body {
   display: flex; align-items: center; gap: 12px;
   padding: 10px 12px;
   cursor: pointer;
-  transition: background .15s;
+  transition: background .15s, border-top .1s;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .ep-item:active { background: var(--surface2); }
 .ep-thumb {
