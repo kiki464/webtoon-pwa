@@ -458,9 +458,10 @@ function hideCtxMenu() {
 }
 
 async function ctxRename() {
+  const target = ctxTarget;
   hideCtxMenu();
-  if (!ctxTarget) return;
-  const { type, id } = ctxTarget;
+  if (!target) return;
+  const { type, id } = target;
   const label = type === 'series' ? '시리즈 이름' : '회차 이름';
   const current = type === 'series'
     ? seriesCache.find(s => s.id === id)?.title
@@ -476,9 +477,10 @@ async function ctxRename() {
 }
 
 async function ctxDelete() {
+  const target = ctxTarget;
   hideCtxMenu();
-  if (!ctxTarget) return;
-  const { type, id } = ctxTarget;
+  if (!target) return;
+  const { type, id } = target;
   const label = type === 'series' ? '이 시리즈' : '이 회차';
   const ok = await showConfirm('삭제할까요?', `${label}를 삭제하면 이미지도 모두 삭제됩니다.`);
   if (!ok) return;
