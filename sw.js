@@ -1,9 +1,9 @@
-const CACHE_NAME = 'webtoon-v4';
+const CACHE_NAME = 'webtoon-v5';
 const ASSETS = [
   '/webtoon-pwa/',
   '/webtoon-pwa/index.html',
-  '/webtoon-pwa/app.js',
-  '/webtoon-pwa/style.css'
+  '/webtoon-pwa/app.js?v=23',
+  '/webtoon-pwa/style.css?v=23'
 ];
 
 self.addEventListener('install', e => {
