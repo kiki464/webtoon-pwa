@@ -561,6 +561,205 @@ function pickEpFiles(e) {
   document.getElementById('ep-file-count').textContent = `📷 ${imgs.length}장 선택됨`;
 }
 
+// ── COVER EDITOR ─────────────────────────────────────────────────────────────
+let coverEditor = {
+  seriesId: null, img: null,
+  x: 0, y: 0, scale: 1,
+  frameW: 0, frameH: 0, frameX: 0, frameY: 0,
+  dragging: false, lastTX: 0, lastTY: 0,
+  pinching: false, lastDist: 0
+};
+
+function ctxChangeCover() {
+  const target = ctxTarget;
+  hideCtxMenu();
+  if (!target || target.type !== 'series') return;
+  coverEditor.seriesId = target.id;
+  document.getElementById('cover-file-input').click();
+}
+
+function onCoverFileSelected(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = '';
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    coverEditor.img = img;
+    openCoverEditor();
+  };
+  img.src = url;
+}
+
+function openCoverEditor() {
+  const editor = document.getElementById('cover-editor');
+  const body = document.getElementById('cover-editor-body');
+  editor.classList.add('show');
+
+  // 캔버스 크기를 body에 맞춤
+  requestAnimationFrame(() => {
+    const bw = body.clientWidth, bh = body.clientHeight;
+    const canvas = document.getElementById('cover-canvas');
+    canvas.width = bw; canvas.height = bh;
+
+    // 3:4 프레임 크기 계산
+    const margin = 40;
+    const frameW = Math.min(bw - margin * 2, bh * 0.55);
+    const frameH = frameW * 4 / 3;
+    const frameX = (bw - frameW) / 2;
+    const frameY = (bh - frameH) / 2;
+
+    coverEditor.frameW = frameW; coverEditor.frameH = frameH;
+    coverEditor.frameX = frameX; coverEditor.frameY = frameY;
+
+    // 프레임 div 위치
+    const frame = document.getElementById('cover-frame');
+    frame.style.left = frameX + 'px'; frame.style.top = frameY + 'px';
+    frame.style.width = frameW + 'px'; frame.style.height = frameH + 'px';
+
+    // 이미지 초기 위치: 프레임을 꽉 채우도록
+    const img = coverEditor.img;
+    const scaleW = frameW / img.naturalWidth;
+    const scaleH = frameH / img.naturalHeight;
+    coverEditor.scale = Math.max(scaleW, scaleH);
+    coverEditor.x = bw / 2;
+    coverEditor.y = bh / 2;
+
+    drawCoverCanvas();
+    attachCoverEditorEvents();
+  });
+}
+
+function closeCoverEditor() {
+  document.getElementById('cover-editor').classList.remove('show');
+  coverEditor.img = null;
+  detachCoverEditorEvents();
+}
+
+function drawCoverCanvas() {
+  const canvas = document.getElementById('cover-canvas');
+  const ctx = canvas.getContext('2d');
+  const { img, x, y, scale } = coverEditor;
+  const w = canvas.width, h = canvas.height;
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#111';
+  ctx.fillRect(0, 0, w, h);
+
+  if (!img) return;
+  const iw = img.naturalWidth * scale;
+  const ih = img.naturalHeight * scale;
+  ctx.drawImage(img, x - iw / 2, y - ih / 2, iw, ih);
+}
+
+async function saveCoverEdit() {
+  const { img, x, y, scale, frameX, frameY, frameW, frameH } = coverEditor;
+  if (!img) return;
+
+  // 오프스크린 캔버스에 크롭 영역 렌더링
+  const out = document.createElement('canvas');
+  out.width = frameW * 2; out.height = frameH * 2;
+  const ctx = out.getContext('2d');
+
+  const ox = (x - frameX) * 2;
+  const oy = (y - frameY) * 2;
+  const iw = img.naturalWidth * scale * 2;
+  const ih = img.naturalHeight * scale * 2;
+  ctx.drawImage(img, ox - iw / 2, oy - ih / 2, iw, ih);
+
+  const dataUrl = out.toDataURL('image/jpeg', 0.85);
+  const series = await dbGet('series', coverEditor.seriesId);
+  await dbPut('series', { ...series, coverUrl: dataUrl });
+
+  closeCoverEditor();
+  if (state.screen === 'home') await renderHome();
+  else if (state.screen === 'episodes') await renderEpisodes();
+}
+
+// 터치/마우스 이벤트
+function attachCoverEditorEvents() {
+  const body = document.getElementById('cover-editor-body');
+  body.addEventListener('touchstart', onCoverTouchStart, { passive: false });
+  body.addEventListener('touchmove', onCoverTouchMove, { passive: false });
+  body.addEventListener('touchend', onCoverTouchEnd, { passive: false });
+  body.addEventListener('mousedown', onCoverMouseDown);
+  body.addEventListener('mousemove', onCoverMouseMove);
+  body.addEventListener('mouseup', onCoverMouseUp);
+  body.addEventListener('wheel', onCoverWheel, { passive: false });
+}
+function detachCoverEditorEvents() {
+  const body = document.getElementById('cover-editor-body');
+  body.removeEventListener('touchstart', onCoverTouchStart);
+  body.removeEventListener('touchmove', onCoverTouchMove);
+  body.removeEventListener('touchend', onCoverTouchEnd);
+  body.removeEventListener('mousedown', onCoverMouseDown);
+  body.removeEventListener('mousemove', onCoverMouseMove);
+  body.removeEventListener('mouseup', onCoverMouseUp);
+  body.removeEventListener('wheel', onCoverWheel);
+}
+
+function getTouchDist(t) {
+  const dx = t[0].clientX - t[1].clientX;
+  const dy = t[0].clientY - t[1].clientY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+function getTouchCenter(t) {
+  return { x: (t[0].clientX + t[1].clientX) / 2, y: (t[0].clientY + t[1].clientY) / 2 };
+}
+
+function onCoverTouchStart(e) {
+  e.preventDefault();
+  if (e.touches.length === 1) {
+    coverEditor.dragging = true;
+    coverEditor.pinching = false;
+    coverEditor.lastTX = e.touches[0].clientX;
+    coverEditor.lastTY = e.touches[0].clientY;
+  } else if (e.touches.length === 2) {
+    coverEditor.pinching = true;
+    coverEditor.dragging = false;
+    coverEditor.lastDist = getTouchDist(e.touches);
+    const c = getTouchCenter(e.touches);
+    coverEditor.lastTX = c.x; coverEditor.lastTY = c.y;
+  }
+}
+function onCoverTouchMove(e) {
+  e.preventDefault();
+  if (e.touches.length === 2 && coverEditor.pinching) {
+    const dist = getTouchDist(e.touches);
+    const ratio = dist / coverEditor.lastDist;
+    coverEditor.scale = Math.max(0.2, coverEditor.scale * ratio);
+    coverEditor.lastDist = dist;
+    const c = getTouchCenter(e.touches);
+    coverEditor.x += c.x - coverEditor.lastTX;
+    coverEditor.y += c.y - coverEditor.lastTY;
+    coverEditor.lastTX = c.x; coverEditor.lastTY = c.y;
+  } else if (e.touches.length === 1 && coverEditor.dragging) {
+    coverEditor.x += e.touches[0].clientX - coverEditor.lastTX;
+    coverEditor.y += e.touches[0].clientY - coverEditor.lastTY;
+    coverEditor.lastTX = e.touches[0].clientX;
+    coverEditor.lastTY = e.touches[0].clientY;
+  }
+  drawCoverCanvas();
+}
+function onCoverTouchEnd(e) {
+  if (e.touches.length === 0) { coverEditor.dragging = false; coverEditor.pinching = false; }
+}
+
+function onCoverMouseDown(e) { coverEditor.dragging = true; coverEditor.lastTX = e.clientX; coverEditor.lastTY = e.clientY; }
+function onCoverMouseMove(e) {
+  if (!coverEditor.dragging) return;
+  coverEditor.x += e.clientX - coverEditor.lastTX;
+  coverEditor.y += e.clientY - coverEditor.lastTY;
+  coverEditor.lastTX = e.clientX; coverEditor.lastTY = e.clientY;
+  drawCoverCanvas();
+}
+function onCoverMouseUp() { coverEditor.dragging = false; }
+function onCoverWheel(e) {
+  e.preventDefault();
+  coverEditor.scale = Math.max(0.2, coverEditor.scale * (e.deltaY < 0 ? 1.1 : 0.9));
+  drawCoverCanvas();
+}
+
 // ── CONTEXT MENU ──────────────────────────────────────────────────────────────
 let ctxTarget = null;
 
@@ -585,7 +784,8 @@ function showCtxAt(x, y, type, id) {
   menu.style.left = left + 'px';
   menu.style.top = top + 'px';
 
-  document.getElementById('ctx-rename').style.display = type === 'series' ? 'flex' : 'flex';
+  document.getElementById('ctx-cover').style.display = type === 'series' ? 'flex' : 'none';
+  document.getElementById('ctx-rename').style.display = 'flex';
   document.getElementById('ctx-delete').style.display = 'flex';
 }
 

@@ -76,6 +76,8 @@ html, body {
   aspect-ratio: 3/4;
   transition: transform .15s;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  user-select: none;
 }
 .series-card:active { transform: scale(.96); }
 
@@ -365,6 +367,49 @@ html, body {
 }
 .search-input:focus { border-color: var(--accent); }
 .search-input::placeholder { color: var(--text2); }
+
+/* ── COVER EDITOR ── */
+.cover-editor-backdrop {
+  position: fixed; inset: 0; background: #000; z-index: 400;
+  display: flex; flex-direction: column;
+  opacity: 0; pointer-events: none; transition: opacity .2s;
+}
+.cover-editor-backdrop.show { opacity: 1; pointer-events: all; }
+
+.cover-editor-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px;
+  padding-top: calc(env(safe-area-inset-top) + 14px);
+  background: rgba(0,0,0,.6); flex-shrink: 0; z-index: 1;
+}
+.cover-editor-header span { font-size: 16px; font-weight: 700; }
+.cover-editor-header button {
+  background: none; border: none; color: var(--accent);
+  font-size: 16px; font-weight: 700; cursor: pointer; padding: 4px 8px;
+}
+.cover-editor-header button.save-btn {
+  background: var(--accent); color: #000; border-radius: 20px; padding: 7px 16px;
+}
+
+.cover-editor-body {
+  flex: 1; position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  touch-action: none;
+}
+
+#cover-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+.cover-frame {
+  position: absolute; pointer-events: none;
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 0 9999px rgba(0,0,0,.6);
+  border-radius: 8px;
+}
+.cover-frame-hint {
+  position: absolute; bottom: 24px; left: 0; right: 0;
+  text-align: center; font-size: 13px; color: rgba(255,255,255,.5);
+  pointer-events: none;
+}
 
 /* scrollbar */
 ::-webkit-scrollbar { width: 0; }
