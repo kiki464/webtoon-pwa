@@ -113,6 +113,15 @@ function bufToUrl(buf, type) {
   return URL.createObjectURL(blob);
 }
 
+function bufToDataUrl(buf, type) {
+  return new Promise(res => {
+    const blob = new Blob([buf], { type });
+    const reader = new FileReader();
+    reader.onload = e => res(e.target.result);
+    reader.readAsDataURL(blob);
+  });
+}
+
 // ── STATE ────────────────────────────────────────────────────────────────────
 let state = { screen: 'home', seriesId: null, episodeId: null };
 let seriesCache = [];
@@ -376,10 +385,10 @@ async function saveSeries() {
     // Set cover from first image
     const imgs = await dbGetAll('images', 'episodeId', epId);
     if (imgs.length) {
-      const url = bufToUrl(imgs[0].data, imgs[0].type);
-      await dbPut('series', { ...(await dbGet('series', id)), coverUrl: url });
+      const dataUrl = await bufToDataUrl(imgs[0].data, imgs[0].type);
+      await dbPut('series', { ...(await dbGet('series', id)), coverUrl: dataUrl });
       const ep = await dbGet('episodes', epId);
-      await dbPut('episodes', { ...ep, thumbUrl: url, imageCount: imgs.length });
+      await dbPut('episodes', { ...ep, thumbUrl: dataUrl, imageCount: imgs.length });
     }
   }
 
@@ -403,7 +412,7 @@ async function saveEpisode() {
 
   const imgs = await dbGetAll('images', 'episodeId', epId);
   if (imgs.length) {
-    const thumbUrl = bufToUrl(imgs[0].data, imgs[0].type);
+    const thumbUrl = await bufToDataUrl(imgs[0].data, imgs[0].type);
     await dbPut('episodes', { ...(await dbGet('episodes', epId)), thumbUrl, imageCount: imgs.length });
 
     // Set series cover if not set
@@ -580,8 +589,39 @@ function dismissInstallBanner() {
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
+async function fixBrokenCovers() {
+  // Fix any covers/thumbs stored as blob URLs (they start with "blob:")
+  const allSeries = await dbGetAll('series');
+  for (const s of allSeries) {
+    if (s.coverUrl && s.coverUrl.startsWith('blob:')) {
+      const eps = await dbGetAll('episodes', 'seriesId', s.id);
+      eps.sort((a, b) => a.order - b.order);
+      if (eps.length) {
+        const imgs = await dbGetAll('images', 'episodeId', eps[0].id);
+        imgs.sort((a, b) => a.order - b.order);
+        if (imgs.length) {
+          const dataUrl = await bufToDataUrl(imgs[0].data, imgs[0].type);
+          await dbPut('series', { ...s, coverUrl: dataUrl });
+        }
+      }
+    }
+  }
+  const allEps = await dbGetAll('episodes');
+  for (const ep of allEps) {
+    if (ep.thumbUrl && ep.thumbUrl.startsWith('blob:')) {
+      const imgs = await dbGetAll('images', 'episodeId', ep.id);
+      imgs.sort((a, b) => a.order - b.order);
+      if (imgs.length) {
+        const dataUrl = await bufToDataUrl(imgs[0].data, imgs[0].type);
+        await dbPut('episodes', { ...ep, thumbUrl: dataUrl });
+      }
+    }
+  }
+}
+
 async function init() {
   db = await openDB();
+  await fixBrokenCovers();
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/webtoon-pwa/sw.js').catch(() => {});

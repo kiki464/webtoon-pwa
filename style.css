@@ -175,7 +175,12 @@ html, body {
   transform: translateY(0);
   pointer-events: all;
 }
-.reader-overlay-top .r-series { font-size: 13px; color: var(--accent); font-weight: 700; }
+.r-back-btn {
+  background: none; border: none; color: var(--accent);
+  font-size: 15px; font-weight: 700; cursor: pointer;
+  padding: 0 0 8px; display: flex; align-items: center; gap: 4px;
+}
+.reader-overlay-top .r-series { font-size: 13px; color: var(--text2); font-weight: 600; }
 .reader-overlay-top .r-episode { font-size: 17px; font-weight: 800; margin-top: 2px; }
 
 .reader-overlay-bottom {
