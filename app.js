@@ -155,7 +155,33 @@ async function render() {
   }
 }
 
+// 시리즈의 첫 번째 이미지를 IndexedDB에서 직접 가져옴
+async function getSeriesCoverUrl(seriesId) {
+  const eps = await dbGetAll('episodes', 'seriesId', seriesId);
+  if (!eps.length) return null;
+  eps.sort((a, b) => a.order - b.order);
+  const imgs = await dbGetAll('images', 'episodeId', eps[0].id);
+  if (!imgs.length) return null;
+  imgs.sort((a, b) => a.order - b.order);
+  return bufToUrl(imgs[0].data, imgs[0].type);
+}
+
+// 회차의 첫 번째 이미지를 IndexedDB에서 직접 가져옴
+async function getEpisodeCoverUrl(episodeId) {
+  const imgs = await dbGetAll('images', 'episodeId', episodeId);
+  if (!imgs.length) return null;
+  imgs.sort((a, b) => a.order - b.order);
+  return bufToUrl(imgs[0].data, imgs[0].type);
+}
+
+let thumbBlobUrls = [];
+function revokeThumbs() {
+  thumbBlobUrls.forEach(u => URL.revokeObjectURL(u));
+  thumbBlobUrls = [];
+}
+
 async function renderHome() {
+  revokeThumbs();
   seriesCache = await dbGetAll('series');
   seriesCache.sort((a, b) => b.createdAt - a.createdAt);
 
@@ -175,22 +201,19 @@ async function renderHome() {
     return;
   }
 
-  // Count episodes per series
   const allEps = await dbGetAll('episodes');
   const epCount = {};
   allEps.forEach(ep => { epCount[ep.seriesId] = (epCount[ep.seriesId] || 0) + 1; });
 
+  // 플레이스홀더로 먼저 렌더링
   const grid = seriesCache.map(s => {
     const count = epCount[s.id] || 0;
-    const coverHtml = s.coverUrl
-      ? `<img class="cover" src="${s.coverUrl}" loading="lazy">`
-      : `<div class="cover-empty">📚</div>`;
     return `
       <div class="series-card" data-id="${s.id}"
            onclick="navigate('episodes',{seriesId:${s.id}})"
            oncontextmenu="showCtxMenu(event,'series',${s.id})"
       >
-        ${coverHtml}
+        <div class="cover-empty" id="cover-${s.id}">📚</div>
         <div class="card-info">
           <div class="card-title">${escHtml(s.title)}</div>
           <div class="card-count">${count}화</div>
@@ -202,7 +225,18 @@ async function renderHome() {
     <div class="section-title">전체 시리즈</div>
     <div class="series-grid">${grid}</div>`;
 
-  // long press for context menu on mobile
+  // 이미지 비동기 로드
+  for (const s of seriesCache) {
+    const url = await getSeriesCoverUrl(s.id);
+    if (url) {
+      thumbBlobUrls.push(url);
+      const el = document.getElementById(`cover-${s.id}`);
+      if (el) {
+        el.outerHTML = `<img class="cover" src="${url}">`;
+      }
+    }
+  }
+
   container.querySelectorAll('.series-card').forEach(card => {
     card.addEventListener('touchstart', e => {
       const id = +card.dataset.id;
@@ -214,6 +248,7 @@ async function renderHome() {
 }
 
 async function renderEpisodes() {
+  revokeThumbs();
   const series = await dbGet('series', state.seriesId);
   if (!series) { navigate('home'); return; }
 
@@ -226,26 +261,19 @@ async function renderEpisodes() {
   episodeCache = await dbGetAll('episodes', 'seriesId', state.seriesId);
   episodeCache.sort((a, b) => a.order - b.order);
 
-  const coverHtml = series.coverUrl
-    ? `<img class="ep-header-cover" src="${series.coverUrl}">`
-    : `<div class="ep-header-cover-empty">📚</div>`;
-
   const epItems = episodeCache.length === 0
     ? `<div class="empty-state" style="padding:40px 24px">
         <div class="emoji">🗂️</div>
         <h3>회차가 없어요</h3>
         <p>위의 + 추가를 눌러<br>이미지를 업로드하세요</p>
        </div>`
-    : episodeCache.map((ep, i) => {
-        const thumbHtml = ep.thumbUrl
-          ? `<img class="ep-thumb" src="${ep.thumbUrl}" loading="lazy">`
-          : `<div class="ep-thumb-empty">🖼️</div>`;
+    : episodeCache.map(ep => {
         return `
           <div class="ep-item" data-id="${ep.id}"
                onclick="navigate('reader',{seriesId:${state.seriesId},episodeId:${ep.id}})"
                oncontextmenu="showCtxMenu(event,'episode',${ep.id})"
           >
-            ${thumbHtml}
+            <div class="ep-thumb-empty" id="epthumb-${ep.id}">🖼️</div>
             <div class="ep-info">
               <div class="ep-title">${escHtml(ep.title)}</div>
               <div class="ep-sub">${ep.imageCount || 0}장</div>
@@ -256,14 +284,31 @@ async function renderEpisodes() {
 
   const container = document.getElementById('ep-content');
   container.innerHTML = `
-    ${coverHtml}
+    <div class="ep-header-cover-empty" id="series-cover-img">📚</div>
     <div class="ep-meta">
       <h2>${escHtml(series.title)}</h2>
       <p>${episodeCache.length}화 등록됨</p>
     </div>
     <div class="ep-list">${epItems}</div>`;
 
-  // long press
+  // 시리즈 커버 비동기 로드
+  const coverUrl = await getSeriesCoverUrl(state.seriesId);
+  if (coverUrl) {
+    thumbBlobUrls.push(coverUrl);
+    const el = document.getElementById('series-cover-img');
+    if (el) el.outerHTML = `<img class="ep-header-cover" src="${coverUrl}">`;
+  }
+
+  // 회차 썸네일 비동기 로드
+  for (const ep of episodeCache) {
+    const url = await getEpisodeCoverUrl(ep.id);
+    if (url) {
+      thumbBlobUrls.push(url);
+      const el = document.getElementById(`epthumb-${ep.id}`);
+      if (el) el.outerHTML = `<img class="ep-thumb" src="${url}">`;
+    }
+  }
+
   container.querySelectorAll('.ep-item').forEach(item => {
     const id = +item.dataset.id;
     item.addEventListener('touchstart', e => {
