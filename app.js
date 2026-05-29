@@ -291,7 +291,7 @@ async function renderEpisodes() {
               <div class="ep-title">${escHtml(ep.title)}</div>
               <div class="ep-sub">${ep.imageCount || 0}장</div>
             </div>
-            <span class="ep-arrow">›</span>
+            <span class="ep-drag-handle" data-ep-id="${ep.id}">☰</span>
           </div>`;
       }).join('');
 
@@ -893,38 +893,41 @@ function initEpDragDrop() {
   const list = document.querySelector('.ep-list');
   if (!list) return;
 
+  // 꾹 누르기 → 컨텍스트 메뉴 (이름변경/삭제)
   list.querySelectorAll('.ep-item').forEach((item, idx) => {
     const id = +item.dataset.id;
-
-    // 컨텍스트 메뉴 (꾹 누르기)
     item.addEventListener('touchstart', e => {
+      if (e.target.closest('.ep-drag-handle')) return; // 핸들은 별도 처리
+      longPressTimer = setTimeout(() => showCtxMenuTouch(e.touches[0], 'episode', id), 500);
+    }, { passive: true });
+    item.addEventListener('touchend', () => clearTimeout(longPressTimer), { passive: true });
+    item.addEventListener('touchmove', () => clearTimeout(longPressTimer), { passive: true });
+    item.addEventListener('contextmenu', e => { e.preventDefault(); showCtxMenu(e, 'episode', id); });
+  });
+
+  // 핸들 터치 → 드래그 순서 변경
+  list.querySelectorAll('.ep-drag-handle').forEach((handle, idx) => {
+    handle.addEventListener('touchstart', e => {
+      e.stopPropagation();
+      const item = handle.closest('.ep-item');
       const touch = e.touches[0];
-      drag.startY = touch.clientY;
-      drag.id = id;
+      drag.id = +handle.dataset.epId;
       drag.el = item;
       drag.fromIdx = idx;
       drag.toIdx = idx;
-      longPressTimer = setTimeout(() => startDrag(touch), 500);
+      startDrag(touch);
     }, { passive: true });
 
-    item.addEventListener('touchmove', e => {
+    handle.addEventListener('touchmove', e => {
       if (drag.ghost) {
         e.preventDefault();
         moveDrag(e.touches[0]);
-      } else {
-        clearTimeout(longPressTimer);
       }
     }, { passive: false });
 
-    item.addEventListener('touchend', e => {
-      clearTimeout(longPressTimer);
+    handle.addEventListener('touchend', () => {
       if (drag.ghost) endDrag();
     }, { passive: true });
-
-    item.addEventListener('contextmenu', e => {
-      e.preventDefault();
-      showCtxMenu(e, 'episode', id);
-    });
   });
 }
 

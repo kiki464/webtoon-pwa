@@ -165,7 +165,11 @@ html, body {
 .ep-info { flex: 1; min-width: 0; }
 .ep-info .ep-title { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ep-info .ep-sub { font-size: 12px; color: var(--text2); margin-top: 3px; }
-.ep-arrow { color: var(--text2); font-size: 16px; }
+.ep-drag-handle {
+  color: var(--text2); font-size: 18px; padding: 8px 4px;
+  cursor: grab; flex-shrink: 0; touch-action: none;
+  -webkit-user-select: none; user-select: none;
+}
 
 /* ── READER ── */
 #screen-reader { background: #000; position: relative; }
