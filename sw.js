@@ -1,4 +1,4 @@
-const CACHE_NAME = 'webtoon-v3';
+const CACHE_NAME = 'webtoon-v4';
 const ASSETS = [
   '/webtoon-pwa/',
   '/webtoon-pwa/index.html',
