@@ -1413,18 +1413,20 @@ async function buildFPCache() {
   }
 }
 
+const DEDUP_WINDOW = 5; // 바로 앞 N장만 비교 (스크롤 중복은 항상 연속 프레임)
+
 // Simulate dedup and return count of kept frames (no DOM changes)
 function simulateDedup(threshold) {
-  const keptFPs = [];
+  const recentKeptFPs = []; // sliding window
   let keptCount = 0;
   for (let i = 0; i < videoFrames.length; i++) {
     if (!videoFrames[i] || videoFrames[i].deleted) continue;
     const fp = _dedupFPCache ? _dedupFPCache[i] : null;
     if (!fp) continue;
-    // Check against ALL kept so far
-    const tooSimilar = keptFPs.some(kfp => frameSim(fp, kfp) >= threshold);
+    const tooSimilar = recentKeptFPs.some(kfp => frameSim(fp, kfp) >= threshold);
     if (!tooSimilar) {
-      keptFPs.push(fp);
+      recentKeptFPs.push(fp);
+      if (recentKeptFPs.length > DEDUP_WINDOW) recentKeptFPs.shift();
       keptCount++;
     }
   }
@@ -1499,7 +1501,7 @@ async function applyDedup() {
   const all = videoFrames.map((f, i) => f ? i : null).filter(i => i !== null);
   if (all.length < 2) return;
 
-  const keptFPs = [];
+  const recentKeptFPs = []; // sliding window — 바로 앞 N장만 비교
   let removed = 0;
 
   for (let i = 0; i < all.length; i++) {
@@ -1507,7 +1509,7 @@ async function applyDedup() {
     const fp = _dedupFPCache[idx];
     if (!fp) continue;
 
-    const tooSimilar = keptFPs.some(kfp => frameSim(fp, kfp) >= threshold);
+    const tooSimilar = recentKeptFPs.some(kfp => frameSim(fp, kfp) >= threshold);
     if (tooSimilar) {
       videoFrames[idx].deleted = true;
       const el = document.getElementById(`vf-${idx}`);
@@ -1518,7 +1520,8 @@ async function applyDedup() {
       }
       removed++;
     } else {
-      keptFPs.push(fp);
+      recentKeptFPs.push(fp);
+      if (recentKeptFPs.length > DEDUP_WINDOW) recentKeptFPs.shift();
     }
   }
 
