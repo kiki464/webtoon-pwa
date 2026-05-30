@@ -1413,22 +1413,23 @@ async function buildFPCache() {
   }
 }
 
-const DEDUP_WINDOW = 5; // 바로 앞 N장만 비교 (스크롤 중복은 항상 연속 프레임)
-
 // Simulate dedup and return count of kept frames (no DOM changes)
+// Strategy: compare each frame only to the immediately preceding frame by index.
+// Scroll duplicates are always temporally adjacent — this prevents false-positives
+// between unrelated scenes that happen to look similar.
 function simulateDedup(threshold) {
-  const recentKeptFPs = []; // sliding window
   let keptCount = 0;
+  let prevFP = null; // fingerprint of frame at [i-1], regardless of kept/deleted
+
   for (let i = 0; i < videoFrames.length; i++) {
-    if (!videoFrames[i] || videoFrames[i].deleted) continue;
+    if (!videoFrames[i]) continue;
     const fp = _dedupFPCache ? _dedupFPCache[i] : null;
     if (!fp) continue;
-    const tooSimilar = recentKeptFPs.some(kfp => frameSim(fp, kfp) >= threshold);
-    if (!tooSimilar) {
-      recentKeptFPs.push(fp);
-      if (recentKeptFPs.length > DEDUP_WINDOW) recentKeptFPs.shift();
-      keptCount++;
-    }
+
+    const tooSimilar = prevFP !== null && frameSim(fp, prevFP) >= threshold;
+    prevFP = fp; // always advance — compare to actual previous frame
+    if (videoFrames[i].deleted) continue; // already manually deleted
+    if (!tooSimilar) keptCount++;
   }
   return keptCount;
 }
@@ -1501,15 +1502,17 @@ async function applyDedup() {
   const all = videoFrames.map((f, i) => f ? i : null).filter(i => i !== null);
   if (all.length < 2) return;
 
-  const recentKeptFPs = []; // sliding window — 바로 앞 N장만 비교
   let removed = 0;
+  let prevFP = null; // 직전 프레임 (index 기준, kept/deleted 무관)
 
   for (let i = 0; i < all.length; i++) {
     const idx = all[i];
     const fp = _dedupFPCache[idx];
-    if (!fp) continue;
+    if (!fp) { prevFP = null; continue; }
 
-    const tooSimilar = recentKeptFPs.some(kfp => frameSim(fp, kfp) >= threshold);
+    const tooSimilar = prevFP !== null && frameSim(fp, prevFP) >= threshold;
+    prevFP = fp; // 항상 직전 프레임 업데이트
+
     if (tooSimilar) {
       videoFrames[idx].deleted = true;
       const el = document.getElementById(`vf-${idx}`);
@@ -1519,9 +1522,6 @@ async function applyDedup() {
         if (btn) btn.textContent = '↩';
       }
       removed++;
-    } else {
-      recentKeptFPs.push(fp);
-      if (recentKeptFPs.length > DEDUP_WINDOW) recentKeptFPs.shift();
     }
   }
 
