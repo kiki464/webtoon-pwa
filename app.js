@@ -1480,27 +1480,42 @@ async function applyDedup() {
   }
 
   const threshold = getDedupThreshold();
-  const active = videoFrames.map((f, i) => (f && !f.deleted) ? i : null).filter(i => i !== null);
-  if (active.length < 2) return;
 
-  // All-pairs dedup: compare each frame to ALL previously kept frames
+  // ── 먼저 모든 컷을 복구 (이전 dedup 결과 초기화) ──
+  for (let i = 0; i < videoFrames.length; i++) {
+    if (!videoFrames[i]) continue;
+    if (videoFrames[i].deleted) {
+      videoFrames[i].deleted = false;
+      const el = document.getElementById(`vf-${i}`);
+      if (el) {
+        el.classList.remove('deleted');
+        const btn = el.querySelector('.vf-del');
+        if (btn) btn.textContent = '✕';
+      }
+    }
+  }
+
+  // ── 전체 컷에 새 기준으로 dedup 적용 ──
+  const all = videoFrames.map((f, i) => f ? i : null).filter(i => i !== null);
+  if (all.length < 2) return;
+
   const keptFPs = [];
   let removed = 0;
 
-  for (let i = 0; i < active.length; i++) {
-    const idx = active[i];
+  for (let i = 0; i < all.length; i++) {
+    const idx = all[i];
     const fp = _dedupFPCache[idx];
     if (!fp) continue;
 
     const tooSimilar = keptFPs.some(kfp => frameSim(fp, kfp) >= threshold);
     if (tooSimilar) {
+      videoFrames[idx].deleted = true;
       const el = document.getElementById(`vf-${idx}`);
       if (el) {
         el.classList.add('deleted');
         const btn = el.querySelector('.vf-del');
         if (btn) btn.textContent = '↩';
       }
-      if (videoFrames[idx]) videoFrames[idx].deleted = true;
       removed++;
     } else {
       keptFPs.push(fp);
