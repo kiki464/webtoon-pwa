@@ -1,9 +1,9 @@
-const CACHE_NAME = 'webtoon-v6';
+const CACHE_NAME = 'webtoon-v7';
 const ASSETS = [
   '/webtoon-pwa/',
   '/webtoon-pwa/index.html',
-  '/webtoon-pwa/app.js?v=27',
-  '/webtoon-pwa/style.css?v=27'
+  '/webtoon-pwa/app.js?v=28',
+  '/webtoon-pwa/style.css?v=28'
 ];
 
 self.addEventListener('install', e => {
@@ -20,7 +20,6 @@ self.addEventListener('activate', e => {
   self.clients.claim();
 });
 
-// Network-first for app shell so updates apply without reinstall
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   const isAppShell = ASSETS.some(a => url.pathname === a || url.pathname.endsWith(a.replace('/webtoon-pwa', '')));

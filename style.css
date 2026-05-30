@@ -462,6 +462,67 @@ html, body {
 .tag-delete-row.selected { border-color: var(--danger); background: rgba(255,77,109,.1); }
 .tag-delete-check { font-size: 18px; color: var(--danger); font-weight: 700; width: 24px; text-align: center; }
 
+/* ── VIDEO MODE ── */
+.video-mode {
+  position: fixed; inset: 0; z-index: 2000;
+  background: var(--bg);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.video-mode.hidden { display: none; }
+
+.video-setup-area {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 24px 24px 40px;
+  overflow-y: auto;
+}
+.video-setup-icon { font-size: 52px; margin-bottom: 12px; }
+.video-setup-title { font-size: 20px; font-weight: 800; color: var(--text1); margin-bottom: 6px; }
+.video-setup-desc { font-size: 13px; color: var(--text2); text-align: center; line-height: 1.6; margin-bottom: 18px; }
+
+.video-crop-row {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; max-width: 360px; margin-bottom: 6px;
+}
+.crop-label { font-size: 13px; color: var(--text2); width: 34px; flex-shrink: 0; }
+.crop-slider { flex: 1; accent-color: var(--accent); }
+.crop-val { font-size: 13px; color: var(--accent); font-weight: 700; width: 40px; text-align: right; flex-shrink: 0; }
+
+.video-frames-area {
+  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 8px;
+}
+.video-frames-area.hidden { display: none; }
+
+.video-frames-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.vf-wrap {
+  position: relative; border-radius: 8px; overflow: hidden;
+  background: var(--surface2);
+  aspect-ratio: 9/16;
+}
+.vf-thumb {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+}
+.vf-num {
+  position: absolute; bottom: 4px; left: 6px;
+  font-size: 11px; font-weight: 700; color: #fff;
+  background: rgba(0,0,0,.5); border-radius: 4px; padding: 1px 5px;
+}
+.vf-del {
+  position: absolute; top: 4px; right: 4px;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--danger); color: #fff;
+  font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  border: none; cursor: pointer;
+}
+.vf-wrap.deleted { opacity: .25; pointer-events: none; }
+
 /* ── SCAN MODE ── */
 .scan-mode {
   position: fixed; inset: 0; z-index: 2000;

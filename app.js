@@ -1208,6 +1208,232 @@ async function renderTagFilterBar() {
   if (activeTagIds.size > 0) bar.classList.add('visible');
 }
 
+// ── VIDEO MODE ────────────────────────────────────────────────────────────────
+let videoFrames = []; // Array of {blob, url} | null (deleted)
+let videoFile = null;
+
+// Sensitivity thresholds: higher = extract more cuts
+const SENS_THRESHOLDS = [0.93, 0.88, 0.80]; // low / medium / high
+
+function openVideoMode() {
+  hideModal('modal-add-episode');
+  document.getElementById('video-file-input').click();
+}
+
+function onVideoFileSelected(e) {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) { openAddEpisodeModal(); return; }
+  videoFile = file;
+  videoFrames = [];
+  document.getElementById('video-frames-grid').innerHTML = '';
+  document.getElementById('video-setup-area').classList.remove('hidden');
+  document.getElementById('video-frames-area').classList.add('hidden');
+  document.getElementById('video-status').textContent = '설정 후 시작';
+  document.getElementById('video-save-btn').disabled = true;
+  document.getElementById('video-save-btn').textContent = '저장';
+  document.getElementById('video-mode').classList.remove('hidden');
+}
+
+function updateSensLabel() {
+  const v = parseInt(document.getElementById('sensitivity-input').value);
+  document.getElementById('sensitivity-val').textContent = ['낮음','보통','높음'][v];
+}
+
+async function startVideoExtraction() {
+  if (!videoFile) return;
+  const file = videoFile;
+
+  document.getElementById('video-setup-area').classList.add('hidden');
+  document.getElementById('video-frames-area').classList.remove('hidden');
+  document.getElementById('video-frames-grid').innerHTML = '';
+  document.getElementById('video-status').textContent = '영상 불러오는 중...';
+  document.getElementById('video-save-btn').disabled = true;
+  showProgress();
+
+  const cropTop = parseInt(document.getElementById('crop-top-input').value) || 0;
+  const cropBottom = parseInt(document.getElementById('crop-bottom-input').value) || 0;
+  const sensIdx = parseInt(document.getElementById('sensitivity-input').value);
+  const threshold = SENS_THRESHOLDS[sensIdx];
+
+  try {
+    await doExtractFrames(file, cropTop, cropBottom, threshold);
+  } catch (err) {
+    hideProgress();
+    document.getElementById('video-status').textContent = '오류: ' + (err.message || err);
+  }
+}
+
+function seekTo(video, time) {
+  return new Promise(res => {
+    const onSeeked = () => { video.removeEventListener('seeked', onSeeked); res(); };
+    video.addEventListener('seeked', onSeeked);
+    video.currentTime = time;
+  });
+}
+
+async function doExtractFrames(file, cropTop, cropBottom, threshold) {
+  const objUrl = URL.createObjectURL(file);
+  const video = document.createElement('video');
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = 'metadata';
+  video.src = objUrl;
+
+  await new Promise((res, rej) => {
+    video.onloadedmetadata = res;
+    video.onerror = () => rej(new Error('영상을 읽을 수 없어요'));
+  });
+
+  const duration = video.duration;
+  const vW = video.videoWidth;
+  const vH = video.videoHeight;
+  const croppedH = Math.max(1, vH - cropTop - cropBottom);
+
+  // Main canvas for full-res cropped output
+  const canvas = document.getElementById('video-extract-canvas');
+  canvas.width = vW;
+  canvas.height = croppedH;
+  const ctx = canvas.getContext('2d', { willReadFrequently: false });
+
+  // Thumb canvas for fingerprinting (tiny, fast)
+  const thumbW = 80;
+  const thumbH = Math.round(80 * croppedH / vW);
+  const tc = document.createElement('canvas');
+  tc.width = thumbW; tc.height = thumbH;
+  const tctx = tc.getContext('2d', { willReadFrequently: true });
+
+  const FPS = 3; // 3 frames/sec
+  const totalSteps = Math.floor(duration * FPS);
+  let lastFP = null;
+  videoFrames = [];
+  const grid = document.getElementById('video-frames-grid');
+
+  for (let i = 0; i < totalSteps; i++) {
+    await seekTo(video, i / FPS);
+
+    // Fingerprint (small)
+    tctx.drawImage(video, 0, cropTop, vW, croppedH, 0, 0, thumbW, thumbH);
+    const fp = getFrameFingerprint(tctx, thumbW, thumbH);
+
+    const pct = (i + 1) / totalSteps * 100;
+    setProgress(pct);
+    const kept = videoFrames.filter(f => f !== null).length;
+    document.getElementById('video-status').textContent =
+      `분석 중 ${Math.round(pct)}% — ${kept}컷`;
+
+    const sim = lastFP ? frameSim(fp, lastFP) : 0;
+    if (lastFP === null || sim < threshold) {
+      lastFP = fp;
+      // Draw full-res cropped frame
+      ctx.drawImage(video, 0, cropTop, vW, croppedH, 0, 0, vW, croppedH);
+      const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.92));
+      if (!blob) continue;
+      const blobUrl = URL.createObjectURL(blob);
+      const idx = videoFrames.length;
+      videoFrames.push({ blob, url: blobUrl });
+
+      const wrap = document.createElement('div');
+      wrap.className = 'vf-wrap';
+      wrap.id = `vf-${idx}`;
+      wrap.innerHTML =
+        `<img class="vf-thumb" src="${blobUrl}" loading="lazy">` +
+        `<div class="vf-num">${idx + 1}</div>` +
+        `<button class="vf-del" onclick="deleteVideoFrame(${idx})">✕</button>`;
+      grid.appendChild(wrap);
+      // scroll to show latest
+      const area = document.getElementById('video-frames-area');
+      area.scrollTop = area.scrollHeight;
+    }
+  }
+
+  URL.revokeObjectURL(objUrl);
+  hideProgress();
+  const kept = videoFrames.filter(f => f !== null).length;
+  document.getElementById('video-status').textContent = `${kept}컷 추출 완료`;
+  document.getElementById('video-save-btn').disabled = kept === 0;
+  document.getElementById('video-save-btn').textContent = `${kept}컷 저장`;
+}
+
+function getFrameFingerprint(ctx, w, h) {
+  const data = ctx.getImageData(0, 0, w, h).data;
+  const fp = [];
+  // Sample every 4th pixel (R channel only — fast enough)
+  for (let i = 0; i < data.length; i += 16) fp.push(data[i]);
+  return fp;
+}
+
+function frameSim(a, b) {
+  const len = Math.min(a.length, b.length);
+  let diff = 0;
+  for (let i = 0; i < len; i++) diff += Math.abs(a[i] - b[i]);
+  return 1 - diff / (len * 255);
+}
+
+function deleteVideoFrame(idx) {
+  const el = document.getElementById(`vf-${idx}`);
+  if (el) el.classList.add('deleted');
+  if (videoFrames[idx]) {
+    URL.revokeObjectURL(videoFrames[idx].url);
+    videoFrames[idx] = null;
+  }
+  const kept = videoFrames.filter(f => f !== null).length;
+  document.getElementById('video-save-btn').disabled = kept === 0;
+  document.getElementById('video-save-btn').textContent = `${kept}컷 저장`;
+  document.getElementById('video-status').textContent = `${kept}컷 선택됨`;
+}
+
+function closeVideoMode() {
+  videoFrames.forEach(f => f && URL.revokeObjectURL(f.url));
+  videoFrames = [];
+  videoFile = null;
+  hideProgress();
+  document.getElementById('video-mode').classList.add('hidden');
+  document.getElementById('video-frames-grid').innerHTML = '';
+  openAddEpisodeModal();
+}
+
+async function saveVideoFrames() {
+  const kept = videoFrames.filter(f => f !== null);
+  if (!kept.length) return;
+
+  document.getElementById('video-mode').classList.add('hidden');
+  showProgress();
+
+  const nextNum = episodeCache.length + 1;
+  const epId = await dbAdd('episodes', {
+    seriesId: state.seriesId,
+    title: `${nextNum}화`,
+    order: episodeCache.length,
+    thumbUrl: null, imageCount: 0, createdAt: Date.now()
+  });
+
+  for (let i = 0; i < kept.length; i++) {
+    const buf = await kept[i].blob.arrayBuffer();
+    await dbAdd('images', {
+      episodeId: epId, order: i,
+      name: `frame_${String(i + 1).padStart(4, '0')}.jpg`,
+      type: 'image/jpeg', data: buf
+    });
+    setProgress((i + 1) / kept.length * 100);
+  }
+
+  kept.forEach(f => URL.revokeObjectURL(f.url));
+  videoFrames = [];
+  videoFile = null;
+  hideProgress();
+
+  const imgs = await dbGetAll('images', 'episodeId', epId);
+  if (imgs.length) {
+    const thumbUrl = await bufToDataUrl(imgs[0].data, imgs[0].type);
+    await dbPut('episodes', { ...(await dbGet('episodes', epId)), thumbUrl, imageCount: imgs.length });
+    const series = await dbGet('series', state.seriesId);
+    if (!series.coverUrl) await dbPut('series', { ...series, coverUrl: thumbUrl });
+  }
+
+  await renderEpisodes();
+}
+
 // ── SCAN MODE ─────────────────────────────────────────────────────────────────
 let scanStream = null;
 let scanBlobs = []; // Array of {blob, url} captured so far

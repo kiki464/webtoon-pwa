@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="icon-192.png">
 
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="style.css?v=27">
+  <link rel="stylesheet" href="style.css?v=28">
   <title>내 웹툰</title>
 </head>
 <body>
@@ -155,7 +155,7 @@
 
       <div style="height:14px"></div>
       <label>이미지 선택 <span style="color:var(--danger)">*</span></label>
-      <div style="display:flex;gap:8px;margin-bottom:4px">
+      <div style="display:flex;gap:8px;margin-bottom:6px">
         <div id="ep-pick-area" class="file-pick-area" style="flex:1">
           <div class="fp-icon">📂</div>
           <p><strong>파일에서 선택</strong><br>여러 장 한번에 가능</p>
@@ -165,14 +165,59 @@
           <p><strong>연속 스캔</strong><br>카메라로 바로 찍기</p>
         </div>
       </div>
+      <div class="file-pick-area" style="border-color:#f0a500;margin-bottom:4px" onclick="openVideoMode()">
+        <div class="fp-icon">🎬</div>
+        <p><strong>영상에서 자동 추출</strong><br>화면 녹화를 컷으로 분리</p>
+      </div>
       <div id="ep-file-count" class="file-count"></div>
       <input type="file" id="ep-file-input" accept="image/*" multiple style="display:none" onchange="pickEpFiles(event)">
+      <input type="file" id="video-file-input" accept="video/*" style="display:none" onchange="onVideoFileSelected(event)">
 
       <div class="modal-actions">
         <button class="btn btn-cancel" onclick="hideModal('modal-add-episode')">취소</button>
         <button class="btn btn-confirm" onclick="saveEpisode()">저장</button>
       </div>
     </div>
+  </div>
+
+  <!-- ── VIDEO MODE ── -->
+  <div id="video-mode" class="video-mode hidden">
+    <div class="scan-header">
+      <button class="scan-cancel-btn" onclick="closeVideoMode()">✕ 취소</button>
+      <span class="scan-count" id="video-status">영상 분석</span>
+      <button class="scan-save-btn" id="video-save-btn" onclick="saveVideoFrames()" disabled>저장</button>
+    </div>
+
+    <!-- Step 1: crop setup -->
+    <div id="video-setup-area" class="video-setup-area">
+      <div class="video-setup-icon">🎬</div>
+      <div class="video-setup-title">자르기 설정</div>
+      <p class="video-setup-desc">상태바·홈바가 녹화됐다면 잘라내세요.<br>모르면 그냥 "분석 시작" 누르세요!</p>
+      <div class="video-crop-row">
+        <span class="crop-label">위</span>
+        <input type="range" id="crop-top-input" class="crop-slider" min="0" max="400" value="0" oninput="document.getElementById('crop-top-val').textContent=this.value+'px'">
+        <span id="crop-top-val" class="crop-val">0px</span>
+      </div>
+      <div class="video-crop-row">
+        <span class="crop-label">아래</span>
+        <input type="range" id="crop-bottom-input" class="crop-slider" min="0" max="400" value="0" oninput="document.getElementById('crop-bottom-val').textContent=this.value+'px'">
+        <span id="crop-bottom-val" class="crop-val">0px</span>
+      </div>
+      <div class="video-crop-row" style="margin-top:8px">
+        <span class="crop-label">감도</span>
+        <input type="range" id="sensitivity-input" class="crop-slider" min="0" max="2" step="1" value="1" oninput="updateSensLabel()">
+        <span id="sensitivity-val" class="crop-val">보통</span>
+      </div>
+      <p class="video-setup-desc" style="font-size:11px;margin-top:4px">감도 높음 = 컷 더 많이 추출</p>
+      <button class="btn btn-confirm" style="width:100%;margin-top:20px;font-size:16px" onclick="startVideoExtraction()">🎬 분석 시작</button>
+    </div>
+
+    <!-- Step 2: extraction progress + frame grid -->
+    <div id="video-frames-area" class="video-frames-area hidden">
+      <div id="video-frames-grid" class="video-frames-grid"></div>
+    </div>
+
+    <canvas id="video-extract-canvas" style="display:none"></canvas>
   </div>
 
   <!-- ── SCAN MODE ── -->
@@ -238,6 +283,6 @@
   </div>
 
 </div>
-<script src="app.js?v=27"></script>
+<script src="app.js?v=28"></script>
 </body>
 </html>
