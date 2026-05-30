@@ -1355,32 +1355,42 @@ async function doExtractFrames(file, cropTop, cropBottom, threshold) {
   document.getElementById('video-save-btn').textContent = `${kept}컷 저장`;
 }
 
-// Fingerprint: sample top 35% + bottom 35% of image (most change during scroll)
-// Returns flat array of grayscale values
+// Fingerprint: sample top 40% + bottom 40% (scroll-sensitive bands)
+// Returns flat array of luminance values for ALL pixels (including background)
 function getFrameFingerprint(ctx, w, h) {
-  const bandH = Math.max(1, Math.floor(h * 0.35));
-  const step = 3; // sample every 3rd pixel horizontally
+  const bandH = Math.max(1, Math.floor(h * 0.40));
+  const STEP = 3;
   const fp = [];
-
-  // Top band
   const topData = ctx.getImageData(0, 0, w, bandH).data;
-  for (let i = 0; i < topData.length; i += 4 * step) {
-    // Luminance: 0.299R + 0.587G + 0.114B
+  for (let i = 0; i < topData.length; i += 4 * STEP)
     fp.push((topData[i] * 77 + topData[i+1] * 150 + topData[i+2] * 29) >> 8);
-  }
-  // Bottom band
   const botData = ctx.getImageData(0, h - bandH, w, bandH).data;
-  for (let i = 0; i < botData.length; i += 4 * step) {
+  for (let i = 0; i < botData.length; i += 4 * STEP)
     fp.push((botData[i] * 77 + botData[i+1] * 150 + botData[i+2] * 29) >> 8);
-  }
   return fp;
 }
 
+// Content-aware similarity: skip near-white (≥228) and near-black (≤18) pixels
+// — these are background/whitespace common to all webtoon pages.
+// Only the actual "ink" pixels are compared.
 function frameSim(a, b) {
   const len = Math.min(a.length, b.length);
-  let diff = 0;
-  for (let i = 0; i < len; i++) diff += Math.abs(a[i] - b[i]);
-  return 1 - diff / (len * 255);
+  let inkDiff = 0, inkCount = 0, totalDiff = 0;
+
+  for (let i = 0; i < len; i++) {
+    const d = Math.abs(a[i] - b[i]);
+    totalDiff += d;
+    const avg = (a[i] + b[i]) >> 1;
+    if (avg > 18 && avg < 228) {   // "ink" pixel — not white, not black
+      inkDiff += d;
+      inkCount++;
+    }
+  }
+
+  // If page is mostly blank (< 3% ink pixels), fall back to full comparison
+  if (inkCount < len * 0.03) return 1 - totalDiff / (len * 255);
+
+  return 1 - inkDiff / (inkCount * 255);
 }
 
 // Cache of fingerprints for all frames (built once, reused for live preview)
