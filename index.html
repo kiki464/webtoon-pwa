@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="icon-192.png">
 
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="style.css?v=26">
+  <link rel="stylesheet" href="style.css?v=27">
   <title>내 웹툰</title>
 </head>
 <body>
@@ -155,9 +155,15 @@
 
       <div style="height:14px"></div>
       <label>이미지 선택 <span style="color:var(--danger)">*</span></label>
-      <div id="ep-pick-area" class="file-pick-area">
-        <div class="fp-icon">📂</div>
-        <p><strong>탭해서 이미지 선택</strong><br>여러 장 한번에 선택 가능<br><span style="font-size:12px;color:#666">파일 이름 순서대로 표시됩니다</span></p>
+      <div style="display:flex;gap:8px;margin-bottom:4px">
+        <div id="ep-pick-area" class="file-pick-area" style="flex:1">
+          <div class="fp-icon">📂</div>
+          <p><strong>파일에서 선택</strong><br>여러 장 한번에 가능</p>
+        </div>
+        <div class="file-pick-area" style="flex:1;border-color:var(--accent)" onclick="openScanMode()">
+          <div class="fp-icon">📷</div>
+          <p><strong>연속 스캔</strong><br>카메라로 바로 찍기</p>
+        </div>
       </div>
       <div id="ep-file-count" class="file-count"></div>
       <input type="file" id="ep-file-input" accept="image/*" multiple style="display:none" onchange="pickEpFiles(event)">
@@ -167,6 +173,21 @@
         <button class="btn btn-confirm" onclick="saveEpisode()">저장</button>
       </div>
     </div>
+  </div>
+
+  <!-- ── SCAN MODE ── -->
+  <div id="scan-mode" class="scan-mode hidden">
+    <div class="scan-header">
+      <button class="scan-cancel-btn" onclick="closeScanMode()">✕ 취소</button>
+      <span class="scan-count" id="scan-count">0장 촬영</span>
+      <button class="scan-save-btn" id="scan-save-btn" onclick="saveScanImages()" disabled>저장</button>
+    </div>
+    <video id="scan-video" class="scan-video" autoplay playsinline muted></video>
+    <canvas id="scan-capture-canvas" style="display:none"></canvas>
+    <button class="scan-shutter" id="scan-shutter" onclick="captureFrame()">
+      <div class="scan-shutter-inner"></div>
+    </button>
+    <div class="scan-strip" id="scan-strip"></div>
   </div>
 
   <!-- ── CONTEXT MENU ── -->
@@ -217,6 +238,6 @@
   </div>
 
 </div>
-<script src="app.js?v=26"></script>
+<script src="app.js?v=27"></script>
 </body>
 </html>

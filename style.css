@@ -462,5 +462,95 @@ html, body {
 .tag-delete-row.selected { border-color: var(--danger); background: rgba(255,77,109,.1); }
 .tag-delete-check { font-size: 18px; color: var(--danger); font-weight: 700; width: 24px; text-align: center; }
 
+/* ── SCAN MODE ── */
+.scan-mode {
+  position: fixed; inset: 0; z-index: 2000;
+  background: #000;
+  display: flex; flex-direction: column;
+  align-items: center;
+}
+.scan-mode.hidden { display: none; }
+
+.scan-header {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: max(env(safe-area-inset-top), 14px) 16px 14px;
+  background: linear-gradient(to bottom, rgba(0,0,0,.75), transparent);
+}
+.scan-cancel-btn, .scan-save-btn {
+  padding: 8px 16px; border-radius: 20px; font-size: 15px; font-weight: 700;
+  border: none; cursor: pointer;
+}
+.scan-cancel-btn { background: rgba(255,255,255,.15); color: #fff; }
+.scan-save-btn { background: var(--accent); color: #000; }
+.scan-save-btn:disabled { background: rgba(255,255,255,.2); color: rgba(255,255,255,.4); }
+.scan-count { color: #fff; font-size: 15px; font-weight: 600; }
+
+.scan-video {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  flex: 1;
+}
+
+.scan-shutter {
+  position: absolute;
+  bottom: calc(env(safe-area-inset-bottom) + 110px);
+  left: 50%; transform: translateX(-50%);
+  width: 74px; height: 74px; border-radius: 50%;
+  background: rgba(255,255,255,.25);
+  border: 3px solid #fff;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; z-index: 10;
+  transition: transform .1s;
+}
+.scan-shutter:active { transform: translateX(-50%) scale(.92); }
+.scan-shutter-inner {
+  width: 56px; height: 56px; border-radius: 50%;
+  background: #fff;
+}
+
+.scan-strip {
+  position: absolute;
+  bottom: env(safe-area-inset-bottom, 0);
+  left: 0; right: 0;
+  height: 100px;
+  display: flex; align-items: center;
+  gap: 6px; padding: 0 12px;
+  overflow-x: auto;
+  background: linear-gradient(to top, rgba(0,0,0,.7), transparent);
+  z-index: 10;
+  -webkit-overflow-scrolling: touch;
+}
+.scan-thumb {
+  flex-shrink: 0;
+  width: 72px; height: 86px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 2px solid rgba(255,255,255,.3);
+  position: relative;
+}
+.scan-thumb-wrap {
+  flex-shrink: 0; position: relative;
+}
+.scan-thumb-del {
+  position: absolute; top: -6px; right: -6px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--danger); color: #fff;
+  font-size: 12px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  border: none; cursor: pointer; z-index: 5;
+}
+
+/* ── FLASH animation for shutter ── */
+@keyframes scanFlash {
+  from { opacity: .6; }
+  to   { opacity: 0; }
+}
+.scan-flash {
+  position: fixed; inset: 0; z-index: 1999;
+  background: #fff; pointer-events: none;
+  animation: scanFlash .25s ease-out forwards;
+}
+
 /* scrollbar */
 ::-webkit-scrollbar { width: 0; }

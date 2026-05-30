@@ -1208,6 +1208,147 @@ async function renderTagFilterBar() {
   if (activeTagIds.size > 0) bar.classList.add('visible');
 }
 
+// ── SCAN MODE ─────────────────────────────────────────────────────────────────
+let scanStream = null;
+let scanBlobs = []; // Array of {blob, url} captured so far
+
+async function openScanMode() {
+  hideModal('modal-add-episode');
+  scanBlobs = [];
+  renderScanStrip();
+
+  const scanEl = document.getElementById('scan-mode');
+  scanEl.classList.remove('hidden');
+
+  try {
+    scanStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: false
+    });
+    const video = document.getElementById('scan-video');
+    video.srcObject = scanStream;
+    await video.play();
+  } catch (err) {
+    closeScanMode();
+    await showConfirm('카메라 오류', '카메라를 사용할 수 없어요.\n카메라 권한을 허용해 주세요.', '확인', '');
+  }
+}
+
+function closeScanMode() {
+  if (scanStream) {
+    scanStream.getTracks().forEach(t => t.stop());
+    scanStream = null;
+  }
+  const video = document.getElementById('scan-video');
+  video.srcObject = null;
+  // Revoke blob URLs
+  scanBlobs.forEach(b => URL.revokeObjectURL(b.url));
+  scanBlobs = [];
+  document.getElementById('scan-mode').classList.add('hidden');
+  document.getElementById('scan-strip').innerHTML = '';
+  updateScanUI();
+  // Return to episode add modal
+  openAddEpisodeModal();
+}
+
+function captureFrame() {
+  const video = document.getElementById('scan-video');
+  if (!video.videoWidth) return;
+
+  const canvas = document.getElementById('scan-capture-canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0);
+
+  // Flash effect
+  const flash = document.createElement('div');
+  flash.className = 'scan-flash';
+  document.body.appendChild(flash);
+  flash.addEventListener('animationend', () => flash.remove());
+
+  canvas.toBlob(blob => {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    scanBlobs.push({ blob, url });
+    renderScanStrip();
+    updateScanUI();
+    // Auto-scroll strip to end
+    const strip = document.getElementById('scan-strip');
+    setTimeout(() => { strip.scrollLeft = strip.scrollWidth; }, 50);
+  }, 'image/jpeg', 0.92);
+}
+
+function deleteScanFrame(index) {
+  URL.revokeObjectURL(scanBlobs[index].url);
+  scanBlobs.splice(index, 1);
+  renderScanStrip();
+  updateScanUI();
+}
+
+function renderScanStrip() {
+  const strip = document.getElementById('scan-strip');
+  strip.innerHTML = scanBlobs.map((b, i) =>
+    `<div class="scan-thumb-wrap">
+      <img class="scan-thumb" src="${b.url}">
+      <button class="scan-thumb-del" onclick="deleteScanFrame(${i})">✕</button>
+    </div>`
+  ).join('');
+}
+
+function updateScanUI() {
+  const n = scanBlobs.length;
+  document.getElementById('scan-count').textContent = `${n}장 촬영`;
+  document.getElementById('scan-save-btn').disabled = n === 0;
+}
+
+async function saveScanImages() {
+  if (!scanBlobs.length) return;
+
+  // Stop camera
+  if (scanStream) {
+    scanStream.getTracks().forEach(t => t.stop());
+    scanStream = null;
+  }
+  document.getElementById('scan-mode').classList.add('hidden');
+
+  // Convert blobs to File-like objects
+  const files = scanBlobs.map((b, i) => new File([b.blob], `scan_${String(i + 1).padStart(4, '0')}.jpg`, { type: 'image/jpeg' }));
+
+  // Revoke URLs
+  scanBlobs.forEach(b => URL.revokeObjectURL(b.url));
+  scanBlobs = [];
+  document.getElementById('scan-strip').innerHTML = '';
+
+  // Auto-generate episode name (e.g. 2화, 3화...)
+  const nextNum = episodeCache.length + 1;
+  const autoTitle = `${nextNum}화`;
+
+  // Save directly as a new episode
+  const epTitle = autoTitle;
+  const order = episodeCache.length;
+  showProgress();
+
+  const epId = await dbAdd('episodes', {
+    seriesId: state.seriesId, title: epTitle, order, thumbUrl: null, imageCount: 0, createdAt: Date.now()
+  });
+
+  await importImages(epId, files, (cur, total) => setProgress(cur / total * 100));
+  hideProgress();
+
+  const imgs = await dbGetAll('images', 'episodeId', epId);
+  if (imgs.length) {
+    const thumbUrl = await bufToDataUrl(imgs[0].data, imgs[0].type);
+    await dbPut('episodes', { ...(await dbGet('episodes', epId)), thumbUrl, imageCount: imgs.length });
+    const series = await dbGet('series', state.seriesId);
+    if (!series.coverUrl) {
+      await dbPut('series', { ...series, coverUrl: thumbUrl });
+    }
+  }
+
+  await renderEpisodes();
+}
+
 // ── INSTALL BANNER ────────────────────────────────────────────────────────────
 function checkInstallBanner() {
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
