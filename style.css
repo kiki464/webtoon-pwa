@@ -523,6 +523,19 @@ html, body {
 }
 .vf-wrap.deleted { opacity: .25; pointer-events: none; }
 
+.postcrop-bar {
+  background: var(--surface2); border-radius: 12px;
+  margin: 0 0 8px; overflow: hidden;
+}
+.postcrop-title {
+  padding: 12px 14px; font-size: 14px; font-weight: 700; color: var(--text1);
+  display: flex; justify-content: space-between; align-items: center; cursor: pointer;
+}
+.postcrop-panel {
+  padding: 0 14px 14px; display: none;
+}
+.postcrop-panel.open { display: block; }
+
 /* ── SCAN MODE ── */
 .scan-mode {
   position: fixed; inset: 0; z-index: 2000;

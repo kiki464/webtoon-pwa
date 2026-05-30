@@ -1370,6 +1370,61 @@ function frameSim(a, b) {
   return 1 - diff / (len * 255);
 }
 
+function togglePostcropPanel() {
+  const panel = document.getElementById('postcrop-panel');
+  const arrow = document.getElementById('postcrop-arrow');
+  const open = panel.classList.toggle('open');
+  arrow.textContent = open ? '▲' : '▼';
+}
+
+async function applyPostCrop() {
+  const cropTop = parseInt(document.getElementById('postcrop-top').value) || 0;
+  const cropBottom = parseInt(document.getElementById('postcrop-bottom').value) || 0;
+  if (cropTop === 0 && cropBottom === 0) return;
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  let done = 0;
+  const total = videoFrames.filter(f => f !== null).length;
+  document.getElementById('video-status').textContent = '자르기 적용 중...';
+  showProgress();
+
+  for (let i = 0; i < videoFrames.length; i++) {
+    if (!videoFrames[i]) continue;
+    const img = new Image();
+    img.src = videoFrames[i].url;
+    await new Promise(res => { img.onload = res; });
+
+    const newH = Math.max(1, img.height - cropTop - cropBottom);
+    canvas.width = img.width;
+    canvas.height = newH;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, cropTop, img.width, newH, 0, 0, img.width, newH);
+
+    const newBlob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.92));
+    URL.revokeObjectURL(videoFrames[i].url);
+    const newUrl = URL.createObjectURL(newBlob);
+    videoFrames[i] = { blob: newBlob, url: newUrl };
+
+    const thumbEl = document.querySelector(`#vf-${i} .vf-thumb`);
+    if (thumbEl) thumbEl.src = newUrl;
+
+    done++;
+    setProgress(done / total * 100);
+  }
+
+  hideProgress();
+  document.getElementById('video-status').textContent = '자르기 완료!';
+  // Reset sliders
+  document.getElementById('postcrop-top').value = 0;
+  document.getElementById('postcrop-bottom').value = 0;
+  document.getElementById('postcrop-top-val').textContent = '0px';
+  document.getElementById('postcrop-bottom-val').textContent = '0px';
+  // Close panel
+  document.getElementById('postcrop-panel').classList.remove('open');
+  document.getElementById('postcrop-arrow').textContent = '▼';
+}
+
 function deleteVideoFrame(idx) {
   const el = document.getElementById(`vf-${idx}`);
   if (el) el.classList.add('deleted');

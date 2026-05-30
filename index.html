@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="icon-192.png">
 
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="style.css?v=28">
+  <link rel="stylesheet" href="style.css?v=29">
   <title>내 웹툰</title>
 </head>
 <body>
@@ -214,6 +214,23 @@
 
     <!-- Step 2: extraction progress + frame grid -->
     <div id="video-frames-area" class="video-frames-area hidden">
+      <!-- Post-crop bar -->
+      <div class="postcrop-bar" id="postcrop-bar">
+        <div class="postcrop-title" onclick="togglePostcropPanel()">✂️ 상태바 자르기 <span id="postcrop-arrow">▼</span></div>
+        <div class="postcrop-panel" id="postcrop-panel">
+          <div class="video-crop-row" style="margin-bottom:4px">
+            <span class="crop-label">위</span>
+            <input type="range" id="postcrop-top" class="crop-slider" min="0" max="400" value="0" oninput="document.getElementById('postcrop-top-val').textContent=this.value+'px'">
+            <span id="postcrop-top-val" class="crop-val">0px</span>
+          </div>
+          <div class="video-crop-row" style="margin-bottom:8px">
+            <span class="crop-label">아래</span>
+            <input type="range" id="postcrop-bottom" class="crop-slider" min="0" max="400" value="0" oninput="document.getElementById('postcrop-bottom-val').textContent=this.value+'px'">
+            <span id="postcrop-bottom-val" class="crop-val">0px</span>
+          </div>
+          <button class="btn btn-confirm" style="width:100%;font-size:14px" onclick="applyPostCrop()">모든 컷에 적용</button>
+        </div>
+      </div>
       <div id="video-frames-grid" class="video-frames-grid"></div>
     </div>
 
@@ -283,6 +300,6 @@
   </div>
 
 </div>
-<script src="app.js?v=28"></script>
+<script src="app.js?v=29"></script>
 </body>
 </html>
