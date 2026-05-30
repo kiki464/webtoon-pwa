@@ -1370,6 +1370,73 @@ function frameSim(a, b) {
   return 1 - diff / (len * 255);
 }
 
+function toggleDedupPanel() {
+  const panel = document.getElementById('dedup-panel');
+  const arrow = document.getElementById('dedup-arrow');
+  const open = panel.classList.toggle('open');
+  arrow.textContent = open ? '▲' : '▼';
+}
+
+async function applyDedup() {
+  const strength = parseInt(document.getElementById('dedup-strength').value);
+  // similarity threshold: if two frames are MORE similar than this, the second is a duplicate
+  // strong=0.75 (remove even slightly similar), medium=0.85, weak=0.92
+  const thresholds = [0.92, 0.85, 0.75];
+  const threshold = thresholds[strength];
+
+  const active = videoFrames.map((f, i) => f ? i : null).filter(i => i !== null);
+  if (active.length < 2) return;
+
+  document.getElementById('video-status').textContent = '중복 분석 중...';
+  showProgress();
+
+  // Build fingerprints for all active frames
+  const tc = document.createElement('canvas');
+  tc.width = 64; tc.height = 114; // ~9:16 at 64px wide
+  const tctx = tc.getContext('2d', { willReadFrequently: true });
+  const fps = [];
+
+  for (let i = 0; i < active.length; i++) {
+    const idx = active[i];
+    const img = new Image();
+    img.src = videoFrames[idx].url;
+    await new Promise(res => { img.onload = res; });
+    tctx.drawImage(img, 0, 0, tc.width, tc.height);
+    fps.push({ idx, fp: getFrameFingerprint(tctx, tc.width, tc.height) });
+    setProgress((i + 1) / active.length * 50);
+  }
+
+  // Greedy keep: keep a frame only if it's different enough from the last kept frame
+  let removed = 0;
+  let lastKeptFP = fps[0].fp;
+
+  for (let i = 1; i < fps.length; i++) {
+    const sim = frameSim(fps[i].fp, lastKeptFP);
+    setProgress(50 + (i / fps.length) * 50);
+    if (sim >= threshold) {
+      // Too similar → delete
+      const idx = fps[i].idx;
+      const el = document.getElementById(`vf-${idx}`);
+      if (el) el.classList.add('deleted');
+      URL.revokeObjectURL(videoFrames[idx].url);
+      videoFrames[idx] = null;
+      removed++;
+    } else {
+      lastKeptFP = fps[i].fp;
+    }
+  }
+
+  hideProgress();
+  const kept = videoFrames.filter(f => f !== null).length;
+  document.getElementById('video-status').textContent = `${removed}컷 제거 → ${kept}컷 남음`;
+  document.getElementById('video-save-btn').disabled = kept === 0;
+  document.getElementById('video-save-btn').textContent = `${kept}컷 저장`;
+
+  // Close panel
+  document.getElementById('dedup-panel').classList.remove('open');
+  document.getElementById('dedup-arrow').textContent = '▼';
+}
+
 function togglePostcropPanel() {
   const panel = document.getElementById('postcrop-panel');
   const arrow = document.getElementById('postcrop-arrow');
