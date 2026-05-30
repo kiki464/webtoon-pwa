@@ -1318,7 +1318,7 @@ async function doExtractFrames(file, cropTop, cropBottom, threshold) {
 
     const pct = (i + 1) / totalSteps * 100;
     setProgress(pct);
-    const kept = videoFrames.filter(f => f !== null).length;
+    const kept = videoFrames.filter(f => f && !f.deleted).length;
     document.getElementById('video-status').textContent =
       `분석 중 ${Math.round(pct)}% — ${kept}컷`;
 
@@ -1339,7 +1339,7 @@ async function doExtractFrames(file, cropTop, cropBottom, threshold) {
       wrap.innerHTML =
         `<img class="vf-thumb" src="${blobUrl}" loading="lazy">` +
         `<div class="vf-num">${idx + 1}</div>` +
-        `<button class="vf-del" onclick="deleteVideoFrame(${idx})">✕</button>`;
+        `<button class="vf-del" onclick="toggleVideoFrame(${idx})">✕</button>`;
       grid.appendChild(wrap);
       // scroll to show latest
       const area = document.getElementById('video-frames-area');
@@ -1349,7 +1349,7 @@ async function doExtractFrames(file, cropTop, cropBottom, threshold) {
 
   URL.revokeObjectURL(objUrl);
   hideProgress();
-  const kept = videoFrames.filter(f => f !== null).length;
+  const kept = videoFrames.filter(f => f && !f.deleted).length;
   document.getElementById('video-status').textContent = `${kept}컷 추출 완료`;
   document.getElementById('video-save-btn').disabled = kept === 0;
   document.getElementById('video-save-btn').textContent = `${kept}컷 저장`;
@@ -1384,7 +1384,7 @@ async function applyDedup() {
   const thresholds = [0.92, 0.85, 0.75];
   const threshold = thresholds[strength];
 
-  const active = videoFrames.map((f, i) => f ? i : null).filter(i => i !== null);
+  const active = videoFrames.map((f, i) => (f && !f.deleted) ? i : null).filter(i => i !== null);
   if (active.length < 2) return;
 
   document.getElementById('video-status').textContent = '중복 분석 중...';
@@ -1418,8 +1418,7 @@ async function applyDedup() {
       const idx = fps[i].idx;
       const el = document.getElementById(`vf-${idx}`);
       if (el) el.classList.add('deleted');
-      URL.revokeObjectURL(videoFrames[idx].url);
-      videoFrames[idx] = null;
+      if (videoFrames[idx]) videoFrames[idx].deleted = true;
       removed++;
     } else {
       lastKeptFP = fps[i].fp;
@@ -1427,7 +1426,7 @@ async function applyDedup() {
   }
 
   hideProgress();
-  const kept = videoFrames.filter(f => f !== null).length;
+  const kept = videoFrames.filter(f => f && !f.deleted).length;
   document.getElementById('video-status').textContent = `${removed}컷 제거 → ${kept}컷 남음`;
   document.getElementById('video-save-btn').disabled = kept === 0;
   document.getElementById('video-save-btn').textContent = `${kept}컷 저장`;
@@ -1452,12 +1451,12 @@ async function applyPostCrop() {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   let done = 0;
-  const total = videoFrames.filter(f => f !== null).length;
+  const total = videoFrames.filter(f => f && !f.deleted).length;
   document.getElementById('video-status').textContent = '자르기 적용 중...';
   showProgress();
 
   for (let i = 0; i < videoFrames.length; i++) {
-    if (!videoFrames[i]) continue;
+    if (!videoFrames[i] || videoFrames[i].deleted) continue;
     const img = new Image();
     img.src = videoFrames[i].url;
     await new Promise(res => { img.onload = res; });
@@ -1492,21 +1491,28 @@ async function applyPostCrop() {
   document.getElementById('postcrop-arrow').textContent = '▼';
 }
 
-function deleteVideoFrame(idx) {
+function toggleVideoFrame(idx) {
   const el = document.getElementById(`vf-${idx}`);
-  if (el) el.classList.add('deleted');
-  if (videoFrames[idx]) {
-    URL.revokeObjectURL(videoFrames[idx].url);
-    videoFrames[idx] = null;
+  if (!videoFrames[idx]) return;
+  const isDeleted = videoFrames[idx].deleted;
+  videoFrames[idx].deleted = !isDeleted;
+  if (el) {
+    el.classList.toggle('deleted', !isDeleted);
+    const btn = el.querySelector('.vf-del');
+    if (btn) btn.textContent = isDeleted ? '✕' : '↩';
   }
-  const kept = videoFrames.filter(f => f !== null).length;
+  updateVideoKeptCount();
+}
+
+function updateVideoKeptCount() {
+  const kept = videoFrames.filter(f => f && !f.deleted).length;
   document.getElementById('video-save-btn').disabled = kept === 0;
   document.getElementById('video-save-btn').textContent = `${kept}컷 저장`;
   document.getElementById('video-status').textContent = `${kept}컷 선택됨`;
 }
 
 function closeVideoMode() {
-  videoFrames.forEach(f => f && URL.revokeObjectURL(f.url));
+  videoFrames.forEach(f => { if (f) URL.revokeObjectURL(f.url); });
   videoFrames = [];
   videoFile = null;
   hideProgress();
@@ -1516,7 +1522,7 @@ function closeVideoMode() {
 }
 
 async function saveVideoFrames() {
-  const kept = videoFrames.filter(f => f !== null);
+  const kept = videoFrames.filter(f => f && !f.deleted);
   if (!kept.length) return;
 
   document.getElementById('video-mode').classList.add('hidden');
@@ -1540,7 +1546,7 @@ async function saveVideoFrames() {
     setProgress((i + 1) / kept.length * 100);
   }
 
-  kept.forEach(f => URL.revokeObjectURL(f.url));
+  videoFrames.forEach(f => { if (f) URL.revokeObjectURL(f.url); });
   videoFrames = [];
   videoFile = null;
   hideProgress();

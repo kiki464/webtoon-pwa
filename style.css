@@ -521,7 +521,8 @@ html, body {
   display: flex; align-items: center; justify-content: center;
   border: none; cursor: pointer;
 }
-.vf-wrap.deleted { opacity: .25; pointer-events: none; }
+.vf-wrap.deleted { opacity: .3; }
+.vf-wrap.deleted .vf-del { background: var(--accent); font-size: 14px; }
 
 .postcrop-bar {
   background: var(--surface2); border-radius: 12px;
