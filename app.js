@@ -1447,11 +1447,25 @@ function toggleDedupPanel() {
   }
 }
 
+function getDedupThreshold() {
+  return parseInt(document.getElementById('dedup-strength').value) / 100;
+}
+
+function onDedupSlider() {
+  const v = document.getElementById('dedup-strength').value;
+  document.getElementById('dedup-strength-val').textContent = v + '%';
+  updateDedupPreview();
+}
+
+function setDedupVal(pct) {
+  document.getElementById('dedup-strength').value = pct;
+  document.getElementById('dedup-strength-val').textContent = pct + '%';
+  updateDedupPreview();
+}
+
 function updateDedupPreview() {
   if (!_dedupFPCache) return;
-  const strength = parseInt(document.getElementById('dedup-strength').value);
-  const thresholds = [0.95, 0.88, 0.80, 0.70, 0.60];
-  const threshold = thresholds[strength];
+  const threshold = getDedupThreshold();
   const count = simulateDedup(threshold);
   const total = videoFrames.filter(f => f && !f.deleted).length;
   document.getElementById('dedup-preview').textContent = `→ ${count}컷 남음 (${total - count}컷 제거)`;
@@ -1465,10 +1479,7 @@ async function applyDedup() {
     hideProgress();
   }
 
-  const strength = parseInt(document.getElementById('dedup-strength').value);
-  const thresholds = [0.95, 0.88, 0.80, 0.70, 0.60];
-  const threshold = thresholds[strength];
-
+  const threshold = getDedupThreshold();
   const active = videoFrames.map((f, i) => (f && !f.deleted) ? i : null).filter(i => i !== null);
   if (active.length < 2) return;
 

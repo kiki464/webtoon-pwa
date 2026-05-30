@@ -536,6 +536,12 @@ html, body {
   padding: 0 14px 14px; display: none;
 }
 .postcrop-panel.open { display: block; }
+.dedup-preset-btn {
+  padding: 5px 10px; border-radius: 16px; font-size: 12px; font-weight: 700;
+  background: var(--surface2); color: var(--text1); border: 1.5px solid var(--border,#333);
+  cursor: pointer;
+}
+.dedup-preset-btn:active { background: var(--accent); color: #000; }
 
 /* ── SCAN MODE ── */
 .scan-mode {

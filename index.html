@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="icon-192.png">
 
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="style.css?v=33">
+  <link rel="stylesheet" href="style.css?v=34">
   <title>내 웹툰</title>
 </head>
 <body>
@@ -237,11 +237,21 @@
         <div class="postcrop-panel" id="dedup-panel">
           <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5">비슷한 컷을 자동으로 골라내요.<br>강도가 높을수록 더 많이 제거해요.</p>
           <div class="video-crop-row" style="margin-bottom:4px">
-            <span class="crop-label">강도</span>
-            <input type="range" id="dedup-strength" class="crop-slider" min="0" max="4" step="1" value="2" oninput="updateDedupPreview();document.getElementById('dedup-strength-val').textContent=['매우약함','약함','보통','강함','매우강함'][+this.value]">
-            <span id="dedup-strength-val" class="crop-val">보통</span>
+            <span class="crop-label">기준</span>
+            <input type="range" id="dedup-strength" class="crop-slider" min="10" max="95" step="1" value="60" oninput="onDedupSlider()">
+            <span id="dedup-strength-val" class="crop-val">60%</span>
           </div>
-          <p id="dedup-preview" style="font-size:12px;color:var(--accent);font-weight:700;margin:4px 0 10px;text-align:center">—</p>
+          <p style="font-size:11px;color:var(--text2);text-align:center;margin:0 0 6px">
+            이 % 이상 같으면 삭제 — 숫자 낮을수록 더 많이 남음
+          </p>
+          <div style="display:flex;gap:6px;margin-bottom:8px;justify-content:center">
+            <button class="dedup-preset-btn" onclick="setDedupVal(80)">80%</button>
+            <button class="dedup-preset-btn" onclick="setDedupVal(60)">60%</button>
+            <button class="dedup-preset-btn" onclick="setDedupVal(40)">40%</button>
+            <button class="dedup-preset-btn" onclick="setDedupVal(25)">25%</button>
+            <button class="dedup-preset-btn" onclick="setDedupVal(15)">15%</button>
+          </div>
+          <p id="dedup-preview" style="font-size:12px;color:var(--accent);font-weight:700;margin:0 0 10px;text-align:center">—</p>
           <button class="btn btn-confirm" style="width:100%;font-size:14px;background:var(--accent2,#7b5ea7);color:#fff" onclick="applyDedup()">중복 컷 자동 제거</button>
         </div>
       </div>
@@ -314,6 +324,6 @@
   </div>
 
 </div>
-<script src="app.js?v=33"></script>
+<script src="app.js?v=34"></script>
 </body>
 </html>
