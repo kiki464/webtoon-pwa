@@ -193,14 +193,18 @@ async function getSeriesCoverUrl(seriesId) {
   return await getEpisodeCoverUrl(eps[0].id);
 }
 
-// 회차의 커버를 IndexedDB에서 직접 가져옴 — 영상 회차는 업로드된 썸네일,
-// 이미지 회차는 첫 번째 이미지를 사용
+// 회차의 커버를 IndexedDB에서 직접 가져옴 — 영상 회차는 업로드된 썸네일
+// (없으면 시리즈 표지로 대체), 이미지 회차는 첫 번째 이미지를 사용
 async function getEpisodeCoverUrl(episodeId) {
   const episode = await dbGet('episodes', episodeId);
   if (episode?.type === 'video') {
     const vids = await dbGetAll('videos', 'episodeId', episodeId);
-    if (!vids.length) return null;
-    return bufToUrl(vids[0].thumbData, vids[0].thumbType);
+    if (vids.length && vids[0].thumbData) {
+      return bufToUrl(vids[0].thumbData, vids[0].thumbType);
+    }
+    const series = await dbGet('series', episode.seriesId);
+    if (series?.coverUrl && series.coverUrl.startsWith('data:')) return series.coverUrl;
+    return null;
   }
   const imgs = await dbGetAll('images', 'episodeId', episodeId);
   if (!imgs.length) return null;
@@ -503,7 +507,6 @@ async function saveVideoEpisode() {
   const title = document.getElementById('video-ep-name-input').value.trim();
   if (!title) { alert('회차 이름을 입력해주세요'); return; }
   if (!pendingVideoFile) { alert('영상을 선택해주세요'); return; }
-  if (!pendingThumbFile) { alert('썸네일 사진을 선택해주세요'); return; }
 
   showProgress();
   setProgress(20);
@@ -515,21 +518,29 @@ async function saveVideoEpisode() {
 
   const videoBuf = await readFileAsBlob(pendingVideoFile);
   setProgress(55);
-  const thumbBuf = await readFileAsBlob(pendingThumbFile);
+
+  // 썸네일은 선택 사항 — 안 고르면 아예 저장 안 하고, getEpisodeCoverUrl이
+  // 표시할 때 시리즈 표지로 대체해서 보여줌
+  let thumbBuf = null, thumbType = null;
+  if (pendingThumbFile) {
+    thumbBuf = await readFileAsBlob(pendingThumbFile);
+    thumbType = pendingThumbFile.type || 'image/jpeg';
+  }
   setProgress(75);
 
   await dbAdd('videos', {
     episodeId: epId,
     videoData: videoBuf, videoType: pendingVideoFile.type || 'video/mp4', videoName: pendingVideoFile.name,
-    thumbData: thumbBuf, thumbType: pendingThumbFile.type || 'image/jpeg'
+    thumbData: thumbBuf, thumbType: thumbType
   });
 
-  const thumbDataUrl = await bufToDataUrl(thumbBuf, pendingThumbFile.type || 'image/jpeg');
-  await dbPut('episodes', { ...(await dbGet('episodes', epId)), thumbUrl: thumbDataUrl });
-
-  const series = await dbGet('series', state.seriesId);
-  if (!series.coverUrl) {
-    await dbPut('series', { ...series, coverUrl: thumbDataUrl });
+  // 썸네일을 직접 골랐고, 시리즈 표지가 아직 없으면 이걸로 채워줌
+  if (thumbBuf) {
+    const thumbDataUrl = await bufToDataUrl(thumbBuf, thumbType);
+    const series = await dbGet('series', state.seriesId);
+    if (!series.coverUrl) {
+      await dbPut('series', { ...series, coverUrl: thumbDataUrl });
+    }
   }
 
   pendingVideoFile = null;
