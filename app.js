@@ -80,6 +80,33 @@ function dbDelete(store, key) {
   });
 }
 
+// 큰 blob(사진/영상)이 많을 때 getAll()로 한꺼번에 다 불러오면 iOS Safari의
+// IndexedDB가 "internal error"를 내는 경우가 있어서, 커서로 하나씩만 메모리에
+// 올렸다가 바로 처리하고 버리는 스트리밍 방식. onItem은 동기 콜백이어야 함
+// (그 안에서 await하면 커서가 중간에 끊길 수 있음).
+function dbCursorEach(store, onItem) {
+  return new Promise((res, rej) => {
+    const req = tx(store).openCursor();
+    req.onsuccess = e => {
+      const cursor = e.target.result;
+      if (!cursor) { res(); return; }
+      onItem(cursor.value);
+      cursor.continue();
+    };
+    req.onerror = e => rej(e.target.error);
+  });
+}
+
+// 저장소 전체 비우기 — getAll() 후 하나씩 delete하는 것보다 훨씬 가볍고,
+// 큰 blob들을 메모리에 올릴 필요가 없음
+function dbClear(store) {
+  return new Promise((res, rej) => {
+    const req = tx(store, 'readwrite').clear();
+    req.onsuccess = () => res();
+    req.onerror = e => rej(e.target.error);
+  });
+}
+
 function dbDeleteByIndex(store, index, query) {
   return new Promise(async (res, rej) => {
     const items = await dbGetAll(store, index, query);
@@ -1930,31 +1957,35 @@ async function exportBackup() {
     const series = await dbGetAll('series');
     const episodes = await dbGetAll('episodes');
     const tags = await dbGetAll('tags');
-    const images = await dbGetAll('images');
-    const videos = await dbGetAll('videos');
+
+    // 사진/영상은 getAll()로 한꺼번에 안 불러오고 커서로 하나씩 스트리밍—
+    // iOS Safari에서 큰 blob을 무더기로 읽으면 "internal error"가 나는 걸 회피
+    const imageMetas = [];
+    const videoMetas = [];
+
+    await dbCursorEach('images', img => {
+      zip.file(`images/${img.id}.bin`, img.data);
+      imageMetas.push({ id: img.id, episodeId: img.episodeId, order: img.order, name: img.name, type: img.type });
+    });
+    setProgress(40);
+
+    await dbCursorEach('videos', v => {
+      zip.file(`videos/${v.id}_video.bin`, v.videoData);
+      if (v.thumbData) zip.file(`videos/${v.id}_thumb.bin`, v.thumbData); // 썸네일은 선택 사항이라 없을 수 있음
+      videoMetas.push({ id: v.id, episodeId: v.episodeId, videoType: v.videoType, videoName: v.videoName, thumbType: v.thumbType, hasThumb: !!v.thumbData });
+    });
+    setProgress(65);
 
     const manifest = {
-      version: 1,
+      version: 2,
       exportedAt: Date.now(),
       series, episodes, tags,
-      images: images.map(img => ({ id: img.id, episodeId: img.episodeId, order: img.order, name: img.name, type: img.type })),
-      videos: videos.map(v => ({ id: v.id, episodeId: v.episodeId, videoType: v.videoType, videoName: v.videoName, thumbType: v.thumbType }))
+      images: imageMetas,
+      videos: videoMetas
     };
     zip.file('data.json', JSON.stringify(manifest));
 
-    const total = images.length + videos.length || 1;
-    let done = 0;
-    for (const img of images) {
-      zip.file(`images/${img.id}.bin`, img.data);
-      done++; setProgress(5 + (done / total) * 70);
-    }
-    for (const v of videos) {
-      zip.file(`videos/${v.id}_video.bin`, v.videoData);
-      zip.file(`videos/${v.id}_thumb.bin`, v.thumbData);
-      done++; setProgress(5 + (done / total) * 70);
-    }
-
-    const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' }, meta => setProgress(75 + meta.percent * 0.25));
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' }, meta => setProgress(65 + meta.percent * 0.35));
 
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1993,9 +2024,10 @@ async function importBackup(file) {
     const manifest = JSON.parse(await manifestFile.async('string'));
 
     // 기존 데이터 전부 비우기 (백업 내용으로 완전히 대체)
+    // clear()는 전체를 getAll()로 읽어서 하나씩 지우는 것보다 훨씬 가볍고
+    // 큰 blob을 메모리에 올릴 필요가 없음 (Safari internal error 회피)
     for (const store of ['series', 'episodes', 'images', 'videos', 'tags']) {
-      const all = await dbGetAll(store);
-      for (const item of all) await dbDelete(store, item.id);
+      await dbClear(store);
     }
 
     for (const s of manifest.series || []) await dbPut('series', s);
@@ -2017,10 +2049,11 @@ async function importBackup(file) {
     }
     for (const vMeta of vidMetas) {
       const videoEntry = zip.file(`videos/${vMeta.id}_video.bin`);
+      // 썸네일은 선택 사항이라 백업에 없을 수 있음 — 영상만 있어도 복원함
       const thumbEntry = zip.file(`videos/${vMeta.id}_thumb.bin`);
-      if (videoEntry && thumbEntry) {
+      if (videoEntry) {
         const videoData = await videoEntry.async('arraybuffer');
-        const thumbData = await thumbEntry.async('arraybuffer');
+        const thumbData = thumbEntry ? await thumbEntry.async('arraybuffer') : null;
         await dbPut('videos', { ...vMeta, videoData, thumbData });
       }
       done++; setProgress(5 + (done / total) * 90);
