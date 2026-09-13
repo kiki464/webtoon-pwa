@@ -1,5 +1,8 @@
 // ── DB ──────────────────────────────────────────────────────────────────────
-const DB_NAME = 'webtoon-db', DB_VER = 2;
+// DB_VER 3 only ADDS the 'videos' store below (onupgradeneeded never touches
+// existing stores) — bumping this never erases series/episodes/images/tags
+// that are already saved in a visitor's browser.
+const DB_NAME = 'webtoon-db', DB_VER = 3;
 let db;
 
 function openDB() {
@@ -21,6 +24,10 @@ function openDB() {
       }
       if (!d.objectStoreNames.contains('tags')) {
         d.createObjectStore('tags', { keyPath: 'id', autoIncrement: true });
+      }
+      if (!d.objectStoreNames.contains('videos')) {
+        const vid = d.createObjectStore('videos', { keyPath: 'id', autoIncrement: true });
+        vid.createIndex('episodeId', 'episodeId');
       }
     };
     req.onsuccess = e => res(e.target.result);
@@ -176,21 +183,25 @@ async function render() {
   }
 }
 
-// 시리즈 커버: 커스텀 표지가 있으면 우선 사용, 없으면 첫 이미지
+// 시리즈 커버: 커스텀 표지가 있으면 우선 사용, 없으면 첫 회차의 커버
 async function getSeriesCoverUrl(seriesId) {
   const series = await dbGet('series', seriesId);
   if (series?.coverUrl && series.coverUrl.startsWith('data:')) return series.coverUrl;
   const eps = await dbGetAll('episodes', 'seriesId', seriesId);
   if (!eps.length) return null;
   eps.sort((a, b) => a.order - b.order);
-  const imgs = await dbGetAll('images', 'episodeId', eps[0].id);
-  if (!imgs.length) return null;
-  imgs.sort((a, b) => a.order - b.order);
-  return bufToUrl(imgs[0].data, imgs[0].type);
+  return await getEpisodeCoverUrl(eps[0].id);
 }
 
-// 회차의 첫 번째 이미지를 IndexedDB에서 직접 가져옴
+// 회차의 커버를 IndexedDB에서 직접 가져옴 — 영상 회차는 업로드된 썸네일,
+// 이미지 회차는 첫 번째 이미지를 사용
 async function getEpisodeCoverUrl(episodeId) {
+  const episode = await dbGet('episodes', episodeId);
+  if (episode?.type === 'video') {
+    const vids = await dbGetAll('videos', 'episodeId', episodeId);
+    if (!vids.length) return null;
+    return bufToUrl(vids[0].thumbData, vids[0].thumbType);
+  }
   const imgs = await dbGetAll('images', 'episodeId', episodeId);
   if (!imgs.length) return null;
   imgs.sort((a, b) => a.order - b.order);
@@ -294,6 +305,7 @@ async function renderEpisodes() {
         <p>위의 + 추가를 눌러<br>이미지를 업로드하세요</p>
        </div>`
     : episodeCache.map(ep => {
+        const sub = ep.type === 'video' ? '🎥 영상' : `${ep.imageCount || 0}장`;
         return `
           <div class="ep-item" data-id="${ep.id}"
                onclick="navigate('reader',{seriesId:${state.seriesId},episodeId:${ep.id}})"
@@ -302,7 +314,7 @@ async function renderEpisodes() {
             <div class="ep-thumb-empty" id="epthumb-${ep.id}">🖼️</div>
             <div class="ep-info">
               <div class="ep-title">${escHtml(ep.title)}</div>
-              <div class="ep-sub">${ep.imageCount || 0}장</div>
+              <div class="ep-sub">${sub}</div>
             </div>
             <span class="ep-drag-handle" data-ep-id="${ep.id}">☰</span>
           </div>`;
@@ -372,7 +384,26 @@ async function renderReader() {
   document.getElementById('reader-overlay-bottom').classList.remove('visible');
 
   const container = document.getElementById('reader-content');
-  container.innerHTML = `<div style="text-align:center;padding:40px;color:#666">이미지 로딩중...</div>`;
+  container.innerHTML = `<div style="text-align:center;padding:40px;color:#666">불러오는 중...</div>`;
+
+  revokeOldUrls();
+
+  if (episode?.type === 'video') {
+    const vids = await dbGetAll('videos', 'episodeId', state.episodeId);
+    if (!vids.length) {
+      container.innerHTML = `<div class="empty-state"><div class="emoji">🎥</div><h3>영상이 없어요</h3></div>`;
+      return;
+    }
+    const v = vids[0];
+    const videoUrl = bufToUrl(v.videoData, v.videoType);
+    blobUrlsToRevoke.push(videoUrl);
+    container.innerHTML = `
+      <div class="reader-video-wrap">
+        <video src="${videoUrl}" controls playsinline autoplay></video>
+      </div>`;
+    document.getElementById('screen-reader').scrollTop = 0;
+    return;
+  }
 
   imageCache = await dbGetAll('images', 'episodeId', state.episodeId);
   imageCache.sort((a, b) => a.order - b.order);
@@ -382,11 +413,10 @@ async function renderReader() {
     return;
   }
 
-  revokeOldUrls();
-
   const imgs = imageCache.map(img => {
     const url = bufToUrl(img.data, img.type);
     img._blobUrl = url;
+    blobUrlsToRevoke.push(url);
     return `<img src="${url}" loading="lazy" decoding="async">`;
   }).join('');
 
@@ -437,6 +467,76 @@ function openAddEpisodeModal() {
   document.getElementById('ep-file-count').textContent = '';
   document.getElementById('ep-file-input').value = '';
   showModal('modal-add-episode');
+}
+
+// ── VIDEO UPLOAD (영상 파일 + 썸네일 사진을 그대로 저장) ─────────────────────
+let pendingVideoFile = null;
+let pendingThumbFile = null;
+
+function openVideoUploadModal() {
+  hideModal('modal-add-episode');
+  pendingVideoFile = null;
+  pendingThumbFile = null;
+  document.getElementById('video-ep-name-input').value = '';
+  document.getElementById('video-upload-file-count').textContent = '';
+  document.getElementById('video-upload-thumb-count').textContent = '';
+  document.getElementById('video-upload-file-input').value = '';
+  document.getElementById('video-upload-thumb-input').value = '';
+  showModal('modal-add-video');
+}
+
+function pickVideoUploadFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  pendingVideoFile = file;
+  document.getElementById('video-upload-file-count').textContent = `🎬 ${file.name}`;
+}
+
+function pickVideoUploadThumb(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  pendingThumbFile = file;
+  document.getElementById('video-upload-thumb-count').textContent = `🖼️ ${file.name}`;
+}
+
+async function saveVideoEpisode() {
+  const title = document.getElementById('video-ep-name-input').value.trim();
+  if (!title) { alert('회차 이름을 입력해주세요'); return; }
+  if (!pendingVideoFile) { alert('영상을 선택해주세요'); return; }
+  if (!pendingThumbFile) { alert('썸네일 사진을 선택해주세요'); return; }
+
+  showProgress();
+  setProgress(20);
+
+  const order = episodeCache.length;
+  const epId = await dbAdd('episodes', {
+    seriesId: state.seriesId, title, order, type: 'video', thumbUrl: null, imageCount: 0, createdAt: Date.now()
+  });
+
+  const videoBuf = await readFileAsBlob(pendingVideoFile);
+  setProgress(55);
+  const thumbBuf = await readFileAsBlob(pendingThumbFile);
+  setProgress(75);
+
+  await dbAdd('videos', {
+    episodeId: epId,
+    videoData: videoBuf, videoType: pendingVideoFile.type || 'video/mp4', videoName: pendingVideoFile.name,
+    thumbData: thumbBuf, thumbType: pendingThumbFile.type || 'image/jpeg'
+  });
+
+  const thumbDataUrl = await bufToDataUrl(thumbBuf, pendingThumbFile.type || 'image/jpeg');
+  await dbPut('episodes', { ...(await dbGet('episodes', epId)), thumbUrl: thumbDataUrl });
+
+  const series = await dbGet('series', state.seriesId);
+  if (!series.coverUrl) {
+    await dbPut('series', { ...series, coverUrl: thumbDataUrl });
+  }
+
+  pendingVideoFile = null;
+  pendingThumbFile = null;
+  hideProgress();
+  hideModal('modal-add-video');
+  await renderEpisodes();
 }
 
 function showModal(id) {
@@ -1104,16 +1204,18 @@ async function ctxDelete() {
   if (!ok) return;
 
   if (type === 'series') {
-    // delete all episodes and images
+    // delete all episodes and their images/videos
     const eps = await dbGetAll('episodes', 'seriesId', id);
     for (const ep of eps) {
       await dbDeleteByIndex('images', 'episodeId', ep.id);
+      await dbDeleteByIndex('videos', 'episodeId', ep.id);
     }
     await dbDeleteByIndex('episodes', 'seriesId', id);
     await dbDelete('series', id);
     navigate('home');
   } else {
     await dbDeleteByIndex('images', 'episodeId', id);
+    await dbDeleteByIndex('videos', 'episodeId', id);
     await dbDelete('episodes', id);
     await renderEpisodes();
   }
@@ -1802,6 +1904,126 @@ async function saveScanImages() {
   await renderEpisodes();
 }
 
+// ── SETTINGS / BACKUP ─────────────────────────────────────────────────────────
+// 브라우저 저장소(IndexedDB)는 이 기기 안에서만 유지되므로, 실수로 사이트
+// 데이터가 지워지거나 다른 기기로 옮길 때를 위한 zip 백업/복원 기능.
+function openSettingsModal() {
+  showModal('modal-settings');
+}
+
+async function exportBackup() {
+  showProgress();
+  setProgress(5);
+  try {
+    const zip = new JSZip();
+    const series = await dbGetAll('series');
+    const episodes = await dbGetAll('episodes');
+    const tags = await dbGetAll('tags');
+    const images = await dbGetAll('images');
+    const videos = await dbGetAll('videos');
+
+    const manifest = {
+      version: 1,
+      exportedAt: Date.now(),
+      series, episodes, tags,
+      images: images.map(img => ({ id: img.id, episodeId: img.episodeId, order: img.order, name: img.name, type: img.type })),
+      videos: videos.map(v => ({ id: v.id, episodeId: v.episodeId, videoType: v.videoType, videoName: v.videoName, thumbType: v.thumbType }))
+    };
+    zip.file('data.json', JSON.stringify(manifest));
+
+    const total = images.length + videos.length || 1;
+    let done = 0;
+    for (const img of images) {
+      zip.file(`images/${img.id}.bin`, img.data);
+      done++; setProgress(5 + (done / total) * 70);
+    }
+    for (const v of videos) {
+      zip.file(`videos/${v.id}_video.bin`, v.videoData);
+      zip.file(`videos/${v.id}_thumb.bin`, v.thumbData);
+      done++; setProgress(5 + (done / total) * 70);
+    }
+
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' }, meta => setProgress(75 + meta.percent * 0.25));
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.href = url; a.download = `webtoon-backup-${stamp}.zip`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  } catch (err) {
+    await showConfirm('내보내기 실패', String(err.message || err), '확인', '');
+  } finally {
+    hideProgress();
+  }
+}
+
+async function onImportFileSelected(e) {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  const ok = await showConfirm(
+    '백업 가져오기',
+    '지금 기기에 있는 모든 시리즈·사진·영상이 이 백업 파일 내용으로 교체됩니다.\n계속할까요?',
+    '가져오기', 'background:var(--accent);color:#000'
+  );
+  if (!ok) return;
+  await importBackup(file);
+}
+
+async function importBackup(file) {
+  hideModal('modal-settings');
+  showProgress();
+  setProgress(5);
+  try {
+    const zip = await JSZip.loadAsync(file);
+    const manifestFile = zip.file('data.json');
+    if (!manifestFile) throw new Error('올바른 백업 파일이 아니에요');
+    const manifest = JSON.parse(await manifestFile.async('string'));
+
+    // 기존 데이터 전부 비우기 (백업 내용으로 완전히 대체)
+    for (const store of ['series', 'episodes', 'images', 'videos', 'tags']) {
+      const all = await dbGetAll(store);
+      for (const item of all) await dbDelete(store, item.id);
+    }
+
+    for (const s of manifest.series || []) await dbPut('series', s);
+    for (const t of manifest.tags || []) await dbPut('tags', t);
+    for (const ep of manifest.episodes || []) await dbPut('episodes', ep);
+
+    const imgMetas = manifest.images || [];
+    const vidMetas = manifest.videos || [];
+    const total = imgMetas.length + vidMetas.length || 1;
+    let done = 0;
+
+    for (const imgMeta of imgMetas) {
+      const entry = zip.file(`images/${imgMeta.id}.bin`);
+      if (entry) {
+        const data = await entry.async('arraybuffer');
+        await dbPut('images', { ...imgMeta, data });
+      }
+      done++; setProgress(5 + (done / total) * 90);
+    }
+    for (const vMeta of vidMetas) {
+      const videoEntry = zip.file(`videos/${vMeta.id}_video.bin`);
+      const thumbEntry = zip.file(`videos/${vMeta.id}_thumb.bin`);
+      if (videoEntry && thumbEntry) {
+        const videoData = await videoEntry.async('arraybuffer');
+        const thumbData = await thumbEntry.async('arraybuffer');
+        await dbPut('videos', { ...vMeta, videoData, thumbData });
+      }
+      done++; setProgress(5 + (done / total) * 90);
+    }
+
+    hideProgress();
+    await showConfirm('가져오기 완료', '백업을 복원했어요.\n확인을 누르면 새로고침됩니다.', '확인', 'background:var(--accent);color:#000');
+    location.reload();
+  } catch (err) {
+    hideProgress();
+    await showConfirm('가져오기 실패', '백업 파일을 읽을 수 없어요.\n' + (err.message || err), '확인', '');
+  }
+}
+
 // ── INSTALL BANNER ────────────────────────────────────────────────────────────
 function checkInstallBanner() {
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
@@ -1868,12 +2090,24 @@ async function init() {
   document.getElementById('modal-add-episode').addEventListener('click', e => {
     if (e.target === e.currentTarget) hideModal('modal-add-episode');
   });
+  document.getElementById('modal-add-video').addEventListener('click', e => {
+    if (e.target === e.currentTarget) hideModal('modal-add-video');
+  });
+  document.getElementById('modal-settings').addEventListener('click', e => {
+    if (e.target === e.currentTarget) hideModal('modal-settings');
+  });
 
   document.getElementById('series-pick-area').addEventListener('click', () => {
     document.getElementById('series-file-input').click();
   });
   document.getElementById('ep-pick-area').addEventListener('click', () => {
     document.getElementById('ep-file-input').click();
+  });
+  document.getElementById('video-upload-pick-area').addEventListener('click', () => {
+    document.getElementById('video-upload-file-input').click();
+  });
+  document.getElementById('video-upload-thumb-area').addEventListener('click', () => {
+    document.getElementById('video-upload-thumb-input').click();
   });
 
   document.addEventListener('click', e => {

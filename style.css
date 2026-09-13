@@ -54,6 +54,11 @@ html, body {
   border-radius: 20px; padding: 6px 12px; font-size: 14px; font-weight: 700;
   cursor: pointer; flex-shrink: 0; white-space: nowrap;
 }
+.header-icon-btn {
+  background: none; border: none; color: var(--text); font-size: 20px;
+  cursor: pointer; padding: 6px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
 
 /* ── SCREENS ── */
 .screen { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
@@ -188,6 +193,8 @@ html, body {
 #screen-reader { background: #000; position: relative; }
 .reader-images { display: flex; flex-direction: column; }
 .reader-images img { width: 100%; display: block; }
+.reader-video-wrap { height: 100%; display: flex; align-items: center; justify-content: center; }
+.reader-video-wrap video { max-width: 100%; max-height: 100%; display: block; }
 
 /* Reader overlay (tap to show/hide) */
 .reader-overlay-top {

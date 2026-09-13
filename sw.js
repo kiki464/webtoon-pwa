@@ -1,13 +1,16 @@
-const CACHE_NAME = 'webtoon-v16';
-const ASSETS = [
+const CACHE_NAME = 'webtoon-shell-v1';
+// App shell paths, compared against request.pathname (query strings ignored).
+// No manual version bump needed anymore — network-first below always prefers
+// the live file and only falls back to this cache when offline.
+const APP_SHELL = [
   '/webtoon-pwa/',
   '/webtoon-pwa/index.html',
-  '/webtoon-pwa/app.js?v=37',
-  '/webtoon-pwa/style.css?v=34'
+  '/webtoon-pwa/app.js',
+  '/webtoon-pwa/style.css'
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(ASSETS)));
+  e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(APP_SHELL)));
   self.skipWaiting();
 });
 
@@ -22,8 +25,12 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
-  const isAppShell = ASSETS.some(a => url.pathname === a || url.pathname.endsWith(a.replace('/webtoon-pwa', '')));
+  const isAppShell = APP_SHELL.includes(url.pathname);
+
   if (isAppShell) {
+    // Network-first: always try to get the latest code; fall back to the
+    // cached shell only when offline. This is what makes code updates show
+    // up on a normal refresh — no cache-name/version bump required.
     e.respondWith(
       fetch(e.request)
         .then(res => {
@@ -31,9 +38,10 @@ self.addEventListener('fetch', e => {
           caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
           return res;
         })
-        .catch(() => caches.match(e.request))
+        .catch(() => caches.match(e.request, { ignoreSearch: true }))
     );
   } else {
+    // Everything else (icons, manifest, etc.) rarely changes — cache-first is fine.
     e.respondWith(
       caches.match(e.request).then(cached => cached || fetch(e.request))
     );
