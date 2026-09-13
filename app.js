@@ -80,19 +80,11 @@ function dbDelete(store, key) {
   });
 }
 
-// 큰 blob(사진/영상)이 많을 때 getAll()로 한꺼번에 다 불러오면 iOS Safari의
-// IndexedDB가 "internal error"를 내는 경우가 있어서, 커서로 하나씩만 메모리에
-// 올렸다가 바로 처리하고 버리는 스트리밍 방식. onItem은 동기 콜백이어야 함
-// (그 안에서 await하면 커서가 중간에 끊길 수 있음).
-function dbCursorEach(store, onItem) {
+// blob 없이 키만 가져옴 — 큰 데이터를 전혀 안 건드리므로 항상 가벼움
+function dbGetAllKeys(store) {
   return new Promise((res, rej) => {
-    const req = tx(store).openCursor();
-    req.onsuccess = e => {
-      const cursor = e.target.result;
-      if (!cursor) { res(); return; }
-      onItem(cursor.value);
-      cursor.continue();
-    };
+    const req = tx(store).getAllKeys();
+    req.onsuccess = e => res(e.target.result);
     req.onerror = e => rej(e.target.error);
   });
 }
@@ -1952,29 +1944,53 @@ function openSettingsModal() {
 async function exportBackup() {
   showProgress();
   setProgress(5);
+  const failedImages = [];
+  const failedVideos = [];
   try {
     const zip = new JSZip();
     const series = await dbGetAll('series');
     const episodes = await dbGetAll('episodes');
     const tags = await dbGetAll('tags');
 
-    // 사진/영상은 getAll()로 한꺼번에 안 불러오고 커서로 하나씩 스트리밍—
-    // iOS Safari에서 큰 blob을 무더기로 읽으면 "internal error"가 나는 걸 회피
+    // 사진/영상은 getAll()/커서로 한꺼번에 훑지 않고, 키만 먼저 가져온 뒤
+    // 하나씩 완전히 독립된 트랜잭션(dbGet)으로 읽음 — iOS Safari는 blob을
+    // 다루는 트랜잭션이 오래 걸리거나 데이터가 누적되면 "internal error"를
+    // 내는 경우가 있어서, 매번 새 트랜잭션으로 끊어서 그 여지를 최소화함.
+    // 그래도 유독 큰 파일 하나가 실패하면 그것만 건너뛰고 나머지는 계속 백업.
     const imageMetas = [];
     const videoMetas = [];
 
-    await dbCursorEach('images', img => {
-      zip.file(`images/${img.id}.bin`, img.data);
-      imageMetas.push({ id: img.id, episodeId: img.episodeId, order: img.order, name: img.name, type: img.type });
-    });
-    setProgress(40);
+    const imageKeys = await dbGetAllKeys('images');
+    const videoKeys = await dbGetAllKeys('videos');
+    const total = imageKeys.length + videoKeys.length || 1;
+    let done = 0;
 
-    await dbCursorEach('videos', v => {
-      zip.file(`videos/${v.id}_video.bin`, v.videoData);
-      if (v.thumbData) zip.file(`videos/${v.id}_thumb.bin`, v.thumbData); // 썸네일은 선택 사항이라 없을 수 있음
-      videoMetas.push({ id: v.id, episodeId: v.episodeId, videoType: v.videoType, videoName: v.videoName, thumbType: v.thumbType, hasThumb: !!v.thumbData });
-    });
-    setProgress(65);
+    for (const key of imageKeys) {
+      try {
+        const img = await dbGet('images', key);
+        if (img) {
+          zip.file(`images/${img.id}.bin`, img.data);
+          imageMetas.push({ id: img.id, episodeId: img.episodeId, order: img.order, name: img.name, type: img.type });
+        }
+      } catch (err) {
+        failedImages.push(key);
+      }
+      done++; setProgress(5 + (done / total) * 60);
+    }
+
+    for (const key of videoKeys) {
+      try {
+        const v = await dbGet('videos', key);
+        if (v) {
+          zip.file(`videos/${v.id}_video.bin`, v.videoData);
+          if (v.thumbData) zip.file(`videos/${v.id}_thumb.bin`, v.thumbData); // 썸네일은 선택 사항이라 없을 수 있음
+          videoMetas.push({ id: v.id, episodeId: v.episodeId, videoType: v.videoType, videoName: v.videoName, thumbType: v.thumbType, hasThumb: !!v.thumbData });
+        }
+      } catch (err) {
+        failedVideos.push(key);
+      }
+      done++; setProgress(5 + (done / total) * 60);
+    }
 
     const manifest = {
       version: 2,
@@ -1993,10 +2009,64 @@ async function exportBackup() {
     a.href = url; a.download = `webtoon-backup-${stamp}.zip`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+    if (failedImages.length || failedVideos.length) {
+      hideProgress();
+      // 읽기 자체가 실패한 항목이라 실패한 레코드 내용(어느 회차인지)은 알 수
+      // 없음 — 개수만 안내하고, 나머지는 정상적으로 백업됐다는 걸 알려줌
+      const lines = [];
+      if (failedImages.length) lines.push(`사진 ${failedImages.length}장`);
+      if (failedVideos.length) lines.push(`영상 ${failedVideos.length}개`);
+      await showConfirm(
+        '일부만 백업됐어요',
+        `${lines.join(', ')}을(를) 백업에 넣지 못했어요 (용량이 너무 커서 기기 제한에 걸렸을 수 있어요).\n나머지는 정상적으로 zip 파일로 저장됐습니다.`,
+        '확인', 'background:var(--accent);color:#000'
+      );
+    }
   } catch (err) {
     await showConfirm('내보내기 실패', String(err.message || err), '확인', '');
   } finally {
     hideProgress();
+  }
+}
+
+// zip 백업이 용량 때문에 계속 실패할 때를 위한 대안 — 영상을 zip으로 묶지
+// 않고 한 번에 하나씩만 읽어서 원본 그대로 기기에 저장. 훨씬 가벼운 요청
+// (개별 회차 인덱스 조회 1건)이라 zip 방식보다 실패할 여지가 적음
+async function openVideoExportList() {
+  hideModal('modal-settings');
+  const episodes = await dbGetAll('episodes');
+  const videoEps = episodes.filter(ep => ep.type === 'video').sort((a, b) => a.order - b.order);
+  const wrap = document.getElementById('video-export-list');
+  if (!videoEps.length) {
+    wrap.innerHTML = '<p style="color:var(--text2);font-size:14px;text-align:center;padding:12px">저장된 영상이 없어요.</p>';
+  } else {
+    wrap.innerHTML = videoEps.map(ep => `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;background:var(--surface2);border-radius:8px">
+        <span style="font-size:14px">${escHtml(ep.title)}</span>
+        <button class="header-action" onclick="downloadSingleVideo(${ep.id})">저장</button>
+      </div>`
+    ).join('');
+  }
+  showModal('modal-video-export-list');
+}
+
+async function downloadSingleVideo(episodeId) {
+  try {
+    const episode = await dbGet('episodes', episodeId);
+    const vids = await dbGetAll('videos', 'episodeId', episodeId);
+    if (!vids.length) { await showConfirm('저장 실패', '영상 데이터를 찾을 수 없어요.', '확인', ''); return; }
+    const v = vids[0];
+    const blob = new Blob([v.videoData], { type: v.videoType || 'video/mp4' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const ext = (v.videoName && v.videoName.includes('.')) ? v.videoName.slice(v.videoName.lastIndexOf('.')) : '.mp4';
+    a.href = url;
+    a.download = `${(episode?.title || 'video').replace(/[\\/:*?"<>|]/g, '_')}${ext}`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  } catch (err) {
+    await showConfirm('저장 실패', String(err.message || err), '확인', '');
   }
 }
 
@@ -2139,6 +2209,9 @@ async function init() {
   });
   document.getElementById('modal-settings').addEventListener('click', e => {
     if (e.target === e.currentTarget) hideModal('modal-settings');
+  });
+  document.getElementById('modal-video-export-list').addEventListener('click', e => {
+    if (e.target === e.currentTarget) hideModal('modal-video-export-list');
   });
 
   document.getElementById('series-pick-area').addEventListener('click', () => {

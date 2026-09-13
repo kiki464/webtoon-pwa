@@ -231,13 +231,31 @@
         <div class="fp-icon">📤</div>
         <p><strong>백업 내보내기</strong><br>사진·영상 전부 zip 파일로 저장</p>
       </div>
-      <div class="file-pick-area" style="border-color:#f0a500" onclick="document.getElementById('import-file-input').click()">
+      <div class="file-pick-area" style="border-color:#f0a500;margin-bottom:10px" onclick="document.getElementById('import-file-input').click()">
         <div class="fp-icon">📥</div>
         <p><strong>백업 가져오기</strong><br>zip 파일에서 복원 (현재 데이터 대체)</p>
       </div>
       <input type="file" id="import-file-input" accept=".zip" style="display:none" onchange="onImportFileSelected(event)">
+      <div class="file-pick-area" style="border-color:var(--accent2,#7b5ea7)" onclick="openVideoExportList()">
+        <div class="fp-icon">🎬</div>
+        <p><strong>영상 개별로 저장</strong><br>zip이 실패할 때 영상만 하나씩 직접 저장</p>
+      </div>
       <div class="modal-actions">
         <button class="btn btn-confirm" onclick="hideModal('modal-settings')">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MODAL: 영상 개별 저장 ── -->
+  <div id="modal-video-export-list" class="modal-backdrop">
+    <div class="modal">
+      <h3>🎬 영상 개별로 저장</h3>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:12px;line-height:1.5">
+        zip 백업이 용량 때문에 실패할 때, 영상을 하나씩 직접 기기에 저장할 수 있어요.
+      </p>
+      <div id="video-export-list" style="display:flex;flex-direction:column;gap:8px;max-height:50vh;overflow-y:auto"></div>
+      <div class="modal-actions">
+        <button class="btn btn-confirm" onclick="hideModal('modal-video-export-list')">닫기</button>
       </div>
     </div>
   </div>
