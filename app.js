@@ -406,12 +406,17 @@ async function renderReader() {
   document.getElementById('reader-overlay-top').classList.remove('visible');
   document.getElementById('reader-overlay-bottom').classList.remove('visible');
 
+  // 영상 회차는 하단의 "이전화/다음화" 큰 오버레이 대신, 영상 위에 작은
+  // ◀◀/▶▶ 버튼을 따로 쓰기 때문에 기존 오버레이는 아예 숨김
+  const isVideoEp = episode?.type === 'video';
+  document.getElementById('reader-overlay-bottom').style.display = isVideoEp ? 'none' : '';
+
   const container = document.getElementById('reader-content');
   container.innerHTML = `<div style="text-align:center;padding:40px;color:#666">불러오는 중...</div>`;
 
   revokeOldUrls();
 
-  if (episode?.type === 'video') {
+  if (isVideoEp) {
     const vids = await dbGetAll('videos', 'episodeId', state.episodeId);
     if (!vids.length) {
       container.innerHTML = `<div class="empty-state"><div class="emoji">🎥</div><h3>영상이 없어요</h3></div>`;
@@ -420,9 +425,15 @@ async function renderReader() {
     const v = vids[0];
     const videoUrl = bufToUrl(v.videoData, v.videoType);
     blobUrlsToRevoke.push(videoUrl);
+    const prevDisabled = epIdx <= 0 ? 'disabled' : '';
+    const nextDisabled = epIdx >= episodeCache.length - 1 ? 'disabled' : '';
     container.innerHTML = `
       <div class="reader-video-wrap">
         <video src="${videoUrl}" controls playsinline autoplay></video>
+        <div class="video-ep-nav">
+          <button class="video-ep-nav-btn" ${prevDisabled} onclick="event.stopPropagation(); navigateEpisode(-1)">◀◀</button>
+          <button class="video-ep-nav-btn" ${nextDisabled} onclick="event.stopPropagation(); navigateEpisode(1)">▶▶</button>
+        </div>
       </div>`;
     document.getElementById('screen-reader').scrollTop = 0;
     return;

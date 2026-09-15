@@ -193,8 +193,26 @@ html, body {
 #screen-reader { background: #000; position: relative; }
 .reader-images { display: flex; flex-direction: column; }
 .reader-images img { width: 100%; display: block; }
-.reader-video-wrap { height: 100%; display: flex; align-items: center; justify-content: center; }
-.reader-video-wrap video { max-width: 100%; max-height: 100%; display: block; }
+/* position:fixed + inset:0 so this always fills the full viewport regardless
+   of ancestor height (percentage heights need a definite-height ancestor,
+   which #reader-content doesn't have) — this is what makes the video truly
+   fullscreen and vertically centered instead of collapsing to the top. */
+.reader-video-wrap {
+  position: fixed; inset: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: center;
+  background: #000;
+}
+.reader-video-wrap video { width: 100%; height: 100%; object-fit: contain; display: block; }
+.video-ep-nav {
+  position: absolute; left: 50%; bottom: 54px; transform: translateX(-50%);
+  display: flex; gap: 14px; z-index: 11;
+}
+.video-ep-nav-btn {
+  padding: 6px 18px; border: none; border-radius: 999px;
+  background: rgba(255,255,255,.18); color: #fff; font-size: 14px; font-weight: 700;
+  backdrop-filter: blur(6px); cursor: pointer;
+}
+.video-ep-nav-btn:disabled { opacity: .25; }
 
 /* Reader overlay (tap to show/hide) */
 .reader-overlay-top {
