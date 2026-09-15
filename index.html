@@ -229,16 +229,16 @@
       </p>
       <div class="file-pick-area" style="border-color:var(--accent);margin-bottom:10px" onclick="exportBackup()">
         <div class="fp-icon">📤</div>
-        <p><strong>백업 내보내기</strong><br>사진·영상 전부 zip 파일로 저장</p>
+        <p><strong>백업 내보내기</strong><br>사진·시리즈 정보를 zip 파일로 저장 (영상은 용량 때문에 제외 — 아래에서 따로 저장)</p>
       </div>
       <div class="file-pick-area" style="border-color:#f0a500;margin-bottom:10px" onclick="document.getElementById('import-file-input').click()">
         <div class="fp-icon">📥</div>
-        <p><strong>백업 가져오기</strong><br>zip 파일에서 복원 (현재 데이터 대체)</p>
+        <p><strong>백업 가져오기</strong><br>zip 파일에서 사진·시리즈 복원 (영상은 그대로 유지됨)</p>
       </div>
       <input type="file" id="import-file-input" accept=".zip" style="display:none" onchange="onImportFileSelected(event)">
       <div class="file-pick-area" style="border-color:var(--accent2,#7b5ea7)" onclick="openVideoExportList()">
         <div class="fp-icon">🎬</div>
-        <p><strong>영상 개별로 저장</strong><br>zip이 실패할 때 영상만 하나씩 직접 저장</p>
+        <p><strong>영상 개별로 저장</strong><br>영상은 하나씩 원본 파일로 직접 저장</p>
       </div>
       <div class="modal-actions">
         <button class="btn btn-confirm" onclick="hideModal('modal-settings')">닫기</button>

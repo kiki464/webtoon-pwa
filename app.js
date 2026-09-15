@@ -1941,28 +1941,34 @@ function openSettingsModal() {
   showModal('modal-settings');
 }
 
+// 영상은 이 zip 백업에 절대 포함하지 않음 — JSZip은 파일을 하나씩
+// "읽고 바로 버리는" 스트리밍이 아니라 generateAsync() 시점까지 추가된
+// 데이터를 전부 메모리에 들고 있다가 한꺼번에 압축하는 구조라, 읽기를
+// 아무리 쪼개도 영상 여러 개(수십~수백MB)를 하나의 zip에 합치는 순간
+// 총 메모리 사용량은 그대로임. 실제로 사용자 기기에서 진행률 70%
+// 부근(zip 생성 단계)에서 화면이 통째로 까맣게 변하며 죽는 것으로
+// 확인됨 — 이건 JS 예외가 아니라 iOS WebKit 프로세스 자체의 OOM(메모리
+// 부족) 크래시라 try/catch로 잡을 수도 없음. 그래서 영상은 아예 이
+// 경로에서 빼고, 훨씬 가벼운 openVideoExportList()(영상 1개씩 개별
+// 저장)로만 다루도록 분리함.
 async function exportBackup() {
   showProgress();
   setProgress(5);
   const failedImages = [];
-  const failedVideos = [];
   try {
     const zip = new JSZip();
     const series = await dbGetAll('series');
     const episodes = await dbGetAll('episodes');
     const tags = await dbGetAll('tags');
 
-    // 사진/영상은 getAll()/커서로 한꺼번에 훑지 않고, 키만 먼저 가져온 뒤
-    // 하나씩 완전히 독립된 트랜잭션(dbGet)으로 읽음 — iOS Safari는 blob을
-    // 다루는 트랜잭션이 오래 걸리거나 데이터가 누적되면 "internal error"를
-    // 내는 경우가 있어서, 매번 새 트랜잭션으로 끊어서 그 여지를 최소화함.
+    // 사진도 getAll()로 한꺼번에 훑지 않고, 키만 먼저 가져온 뒤 하나씩
+    // 완전히 독립된 트랜잭션(dbGet)으로 읽음 — iOS Safari는 blob을 다루는
+    // 트랜잭션이 오래 걸리거나 데이터가 누적되면 "internal error"를 내는
+    // 경우가 있어서, 매번 새 트랜잭션으로 끊어서 그 여지를 최소화함.
     // 그래도 유독 큰 파일 하나가 실패하면 그것만 건너뛰고 나머지는 계속 백업.
     const imageMetas = [];
-    const videoMetas = [];
-
     const imageKeys = await dbGetAllKeys('images');
-    const videoKeys = await dbGetAllKeys('videos');
-    const total = imageKeys.length + videoKeys.length || 1;
+    const total = imageKeys.length || 1;
     let done = 0;
 
     for (const key of imageKeys) {
@@ -1978,26 +1984,12 @@ async function exportBackup() {
       done++; setProgress(5 + (done / total) * 60);
     }
 
-    for (const key of videoKeys) {
-      try {
-        const v = await dbGet('videos', key);
-        if (v) {
-          zip.file(`videos/${v.id}_video.bin`, v.videoData);
-          if (v.thumbData) zip.file(`videos/${v.id}_thumb.bin`, v.thumbData); // 썸네일은 선택 사항이라 없을 수 있음
-          videoMetas.push({ id: v.id, episodeId: v.episodeId, videoType: v.videoType, videoName: v.videoName, thumbType: v.thumbType, hasThumb: !!v.thumbData });
-        }
-      } catch (err) {
-        failedVideos.push(key);
-      }
-      done++; setProgress(5 + (done / total) * 60);
-    }
-
     const manifest = {
-      version: 2,
+      version: 3,
       exportedAt: Date.now(),
+      videosIncluded: false, // 영상은 "영상 개별로 저장"으로 따로 받아야 함
       series, episodes, tags,
-      images: imageMetas,
-      videos: videoMetas
+      images: imageMetas
     };
     zip.file('data.json', JSON.stringify(manifest));
 
@@ -2010,16 +2002,11 @@ async function exportBackup() {
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
 
-    if (failedImages.length || failedVideos.length) {
+    if (failedImages.length) {
       hideProgress();
-      // 읽기 자체가 실패한 항목이라 실패한 레코드 내용(어느 회차인지)은 알 수
-      // 없음 — 개수만 안내하고, 나머지는 정상적으로 백업됐다는 걸 알려줌
-      const lines = [];
-      if (failedImages.length) lines.push(`사진 ${failedImages.length}장`);
-      if (failedVideos.length) lines.push(`영상 ${failedVideos.length}개`);
       await showConfirm(
         '일부만 백업됐어요',
-        `${lines.join(', ')}을(를) 백업에 넣지 못했어요 (용량이 너무 커서 기기 제한에 걸렸을 수 있어요).\n나머지는 정상적으로 zip 파일로 저장됐습니다.`,
+        `사진 ${failedImages.length}장을 백업에 넣지 못했어요 (용량이 너무 커서 기기 제한에 걸렸을 수 있어요).\n나머지는 정상적으로 zip 파일로 저장됐습니다.`,
         '확인', 'background:var(--accent);color:#000'
       );
     }
@@ -2076,7 +2063,7 @@ async function onImportFileSelected(e) {
   if (!file) return;
   const ok = await showConfirm(
     '백업 가져오기',
-    '지금 기기에 있는 모든 시리즈·사진·영상이 이 백업 파일 내용으로 교체됩니다.\n계속할까요?',
+    '지금 기기에 있는 모든 시리즈·사진 정보가 이 백업 파일 내용으로 교체됩니다.\n(영상은 이 백업에 포함되지 않아서 그대로 남아있어요)\n계속할까요?',
     '가져오기', 'background:var(--accent);color:#000'
   );
   if (!ok) return;
@@ -2093,10 +2080,12 @@ async function importBackup(file) {
     if (!manifestFile) throw new Error('올바른 백업 파일이 아니에요');
     const manifest = JSON.parse(await manifestFile.async('string'));
 
-    // 기존 데이터 전부 비우기 (백업 내용으로 완전히 대체)
+    // 기존 데이터 비우기 (백업 내용으로 대체) — 'videos'는 일부러 안 비움.
+    // 이 백업엔 영상이 안 들어있어서(용량 문제로 exportBackup에서 제외함),
+    // videos까지 지워버리면 기기에 남아있던 영상을 되살릴 방법이 없어짐.
     // clear()는 전체를 getAll()로 읽어서 하나씩 지우는 것보다 훨씬 가볍고
     // 큰 blob을 메모리에 올릴 필요가 없음 (Safari internal error 회피)
-    for (const store of ['series', 'episodes', 'images', 'videos', 'tags']) {
+    for (const store of ['series', 'episodes', 'images', 'tags']) {
       await dbClear(store);
     }
 
@@ -2105,6 +2094,8 @@ async function importBackup(file) {
     for (const ep of manifest.episodes || []) await dbPut('episodes', ep);
 
     const imgMetas = manifest.images || [];
+    // manifest.videos는 이 기능 이전 버전(v1~2) 백업 파일과의 호환용 —
+    // 새로 내보낸 백업엔 항상 없음(videosIncluded: false)
     const vidMetas = manifest.videos || [];
     const total = imgMetas.length + vidMetas.length || 1;
     let done = 0;
@@ -2117,9 +2108,9 @@ async function importBackup(file) {
       }
       done++; setProgress(5 + (done / total) * 90);
     }
+    if (vidMetas.length) await dbClear('videos'); // 옛 백업이 영상을 갖고 있을 때만 교체
     for (const vMeta of vidMetas) {
       const videoEntry = zip.file(`videos/${vMeta.id}_video.bin`);
-      // 썸네일은 선택 사항이라 백업에 없을 수 있음 — 영상만 있어도 복원함
       const thumbEntry = zip.file(`videos/${vMeta.id}_thumb.bin`);
       if (videoEntry) {
         const videoData = await videoEntry.async('arraybuffer');
