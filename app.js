@@ -2189,6 +2189,8 @@ async function renderAllVideosView() {
   const seriesById = new Map(allSeries.map(s => [s.id, s]));
   const allEpisodes = await dbGetAll('episodes');
   const videoEpisodes = allEpisodes.filter(ep => ep.type === 'video').sort((a, b) => b.createdAt - a.createdAt);
+  // ctxRename이 회차의 현재 제목을 여기서 찾음 — 이 화면도 채워둬야 정상 동작
+  episodeCache = videoEpisodes;
 
   const header = document.getElementById('ep-header-ui');
   header.innerHTML = `
@@ -2222,8 +2224,11 @@ async function renderAllVideosView() {
     const clickAction = allVideosSelectMode
       ? `toggleAllVideosPick(${ep.id})`
       : `navigate('reader',{seriesId:${ep.seriesId},episodeId:${ep.id}})`;
+    // 선택 모드가 아닐 때만 꾹 누르기/우클릭으로 이름변경·삭제 메뉴를 씀
+    // (선택 모드에서는 탭 = 선택 토글이라 컨텍스트 메뉴와 겹치면 헷갈림)
+    const ctxAttr = allVideosSelectMode ? '' : `oncontextmenu="showCtxMenu(event,'episode',${ep.id})"`;
     return `
-      <div class="ep-item${selected ? ' selected' : ''}" id="avitem-${ep.id}" onclick="${clickAction}">
+      <div class="ep-item${selected ? ' selected' : ''}" id="avitem-${ep.id}" data-id="${ep.id}" onclick="${clickAction}" ${ctxAttr}>
         <div class="ep-thumb-empty" id="epthumb-${ep.id}">🎬</div>
         <div class="ep-info">
           <div class="ep-title">${escHtml(ep.title)}</div>
@@ -2240,6 +2245,18 @@ async function renderAllVideosView() {
       <p style="margin-top:6px">${videoEpisodes.length}개 (전체 시리즈 통합)</p>
     </div>
     <div class="ep-list">${items}</div>`;
+
+  // 모바일 꾹 누르기 → 컨텍스트 메뉴 (선택 모드가 아닐 때만)
+  if (!allVideosSelectMode) {
+    container.querySelectorAll('.ep-item').forEach(item => {
+      const id = +item.dataset.id;
+      item.addEventListener('touchstart', e => {
+        longPressTimer = setTimeout(() => showCtxMenuTouch(e.touches[0], 'episode', id), 500);
+      }, { passive: true });
+      item.addEventListener('touchend', () => clearTimeout(longPressTimer), { passive: true });
+      item.addEventListener('touchmove', () => clearTimeout(longPressTimer), { passive: true });
+    });
+  }
 
   for (const ep of videoEpisodes) {
     const url = await getEpisodeCoverUrl(ep.id);
