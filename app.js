@@ -349,9 +349,8 @@ async function renderEpisodes() {
     <button class="header-action" onclick="${isVideoGroup ? 'openVideoUploadModal()' : 'openAddEpisodeModal()'}">+ 추가</button>`;
 
   episodeCache = await dbGetAll('episodes', 'seriesId', state.seriesId);
-  // 영상 그룹은 수동 순서 대신 "최근 추가한 순"(최신이 위)으로 항상 정렬
-  if (isVideoGroup) episodeCache.sort((a, b) => b.createdAt - a.createdAt);
-  else episodeCache.sort((a, b) => a.order - b.order);
+  // 영상 그룹도 일반 시리즈와 동일하게 수동 순서(order) + 드래그 재정렬 사용
+  episodeCache.sort((a, b) => a.order - b.order);
 
   const epItems = episodeCache.length === 0
     ? `<div class="empty-state" style="padding:40px 24px">
@@ -361,8 +360,6 @@ async function renderEpisodes() {
        </div>`
     : episodeCache.map(ep => {
         const sub = ep.type === 'video' ? '🎥 영상' : `${ep.imageCount || 0}장`;
-        // 영상 그룹은 정렬이 항상 최근순으로 고정이라 드래그 핸들(수동 재정렬)이 필요 없음
-        const dragHandle = isVideoGroup ? '' : `<span class="ep-drag-handle" data-ep-id="${ep.id}">☰</span>`;
         return `
           <div class="ep-item" data-id="${ep.id}"
                onclick="navigate('reader',{seriesId:${state.seriesId},episodeId:${ep.id}})"
@@ -373,7 +370,7 @@ async function renderEpisodes() {
               <div class="ep-title">${escHtml(ep.title)}</div>
               <div class="ep-sub">${sub}</div>
             </div>
-            ${dragHandle}
+            <span class="ep-drag-handle" data-ep-id="${ep.id}">☰</span>
           </div>`;
       }).join('');
 
@@ -416,7 +413,7 @@ async function renderEpisodes() {
     }
   }
 
-  if (!isVideoGroup) initEpDragDrop();
+  initEpDragDrop();
 }
 
 async function renderReader() {
@@ -567,17 +564,36 @@ function pickVideoUploadThumb(e) {
   document.getElementById('video-upload-thumb-count').textContent = `🖼️ ${file.name}`;
 }
 
+// "내 영상"(전체 보기)에서 +로 바로 올릴 때 소속시킬 기본 보관함 시리즈 —
+// 처음 쓸 때 한 번만 생기고, 이후엔 재사용됨. 그냥 평범한 영상 그룹이라
+// 영상 탭 목록에도 뜨고, 나중에 "그룹 만들기"로 다른 그룹에 옮길 수도 있음
+async function ensureDefaultVideoBucket() {
+  const all = await dbGetAll('series');
+  const existing = all.find(s => s.isDefaultVideoBucket === true);
+  if (existing) return existing.id;
+  return await dbAdd('series', {
+    title: '미분류 영상', coverUrl: null, tagIds: [],
+    isVideoGroup: true, isDefaultVideoBucket: true, createdAt: Date.now()
+  });
+}
+
 async function saveVideoEpisode() {
   const title = document.getElementById('video-ep-name-input').value.trim();
   if (!title) { alert('회차 이름을 입력해주세요'); return; }
   if (!pendingVideoFile) { alert('영상을 선택해주세요'); return; }
 
   showProgress();
-  setProgress(20);
+  setProgress(10);
 
-  const order = episodeCache.length;
+  // "내 영상"에서 직접 추가한 경우엔 소속될 시리즈가 없으므로 기본 보관함으로
+  const targetSeriesId = (state.isAllVideos || state.seriesId == null)
+    ? await ensureDefaultVideoBucket()
+    : state.seriesId;
+
+  const existingEpisodes = await dbGetAll('episodes', 'seriesId', targetSeriesId);
+  const order = existingEpisodes.length;
   const epId = await dbAdd('episodes', {
-    seriesId: state.seriesId, title, order, type: 'video', thumbUrl: null, imageCount: 0, createdAt: Date.now()
+    seriesId: targetSeriesId, title, order, type: 'video', thumbUrl: null, imageCount: 0, createdAt: Date.now()
   });
 
   const videoBuf = await readFileAsBlob(pendingVideoFile);
@@ -601,7 +617,7 @@ async function saveVideoEpisode() {
   // 썸네일을 직접 골랐고, 시리즈 표지가 아직 없으면 이걸로 채워줌
   if (thumbBuf) {
     const thumbDataUrl = await bufToDataUrl(thumbBuf, thumbType);
-    const series = await dbGet('series', state.seriesId);
+    const series = await dbGet('series', targetSeriesId);
     if (!series.coverUrl) {
       await dbPut('series', { ...series, coverUrl: thumbDataUrl });
     }
@@ -611,7 +627,7 @@ async function saveVideoEpisode() {
   pendingThumbFile = null;
   hideProgress();
   hideModal('modal-add-video');
-  await renderEpisodes();
+  await renderEpisodes(); // isAllVideos 상태를 그대로 보고 알맞은 화면을 다시 그림
 }
 
 function showModal(id) {
@@ -2147,7 +2163,8 @@ async function renderAllVideosView() {
     ${allVideosSelectMode
       ? `<button class="header-tag-btn" onclick="cancelAllVideosSelectMode()">취소</button>
          <button class="header-action" onclick="confirmCreateGroupFromAllVideos()">그룹 만들기(${selectedAllVideosIds.size})</button>`
-      : `<button class="header-tag-btn" onclick="enterAllVideosSelectMode()">선택</button>`}`;
+      : `<button class="header-tag-btn" onclick="enterAllVideosSelectMode()">선택</button>
+         <button class="header-action" onclick="openVideoUploadModal()">+ 추가</button>`}`;
 
   const container = document.getElementById('ep-content');
 
@@ -2157,7 +2174,7 @@ async function renderAllVideosView() {
       <div class="empty-state" style="padding:40px 24px">
         <div class="emoji">🎥</div>
         <h3>아직 영상이 없어요</h3>
-        <p>시리즈 안에서 영상을 올리면<br>여기 모아서 보여줘요</p>
+        <p>위의 + 추가를 눌러<br>영상을 올려보세요</p>
       </div>`;
     return;
   }
