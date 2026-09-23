@@ -12,9 +12,23 @@
   <link rel="apple-touch-icon" href="icon-192.png">
 
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="style.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <title>내 웹툰</title>
+  <script>
+    // <link rel="stylesheet"> / <script src> follow normal HTTP caching rules,
+    // and GitHub Pages' CDN can keep serving an old cached copy of a file for
+    // a while after a new deploy even though the page itself updated — files
+    // can go stale independently of each other. Fetching with cache:'no-store'
+    // bypasses that entirely and has been 100% reliable in testing, unlike
+    // relying on the service worker's own network-first fetch (still subject
+    // to this same layer). Injected here instead of a static <link> so the
+    // styles are always genuinely current.
+    fetch('style.css', { cache: 'no-store' }).then(r => r.text()).then(css => {
+      const el = document.createElement('style');
+      el.textContent = css;
+      document.head.appendChild(el);
+    });
+  </script>
 </head>
 <body>
 <div id="app">
@@ -406,6 +420,22 @@
   </div>
 
 </div>
-<script src="app.js"></script>
+<script>
+  // See the style.css loader in <head> for why this isn't a plain
+  // <script src="app.js"> — same HTTP-cache staleness risk, same fix.
+  fetch('app.js', { cache: 'no-store' }).then(r => r.text()).then(js => {
+    const el = document.createElement('script');
+    el.textContent = js;
+    document.body.appendChild(el);
+    // app.js registers its own DOMContentLoaded listener to call init(), but
+    // by the time this fetch resolves that event has almost always already
+    // fired — a listener added after the fact never runs, so kick init()
+    // manually in that case. (If DOMContentLoaded hasn't fired yet, app.js's
+    // own listener handles it and this is skipped — never both.)
+    if (document.readyState !== 'loading' && typeof init === 'function') init();
+  }).catch(err => {
+    document.body.innerHTML = '<p style="padding:24px;color:#fff;font-family:sans-serif">앱을 불러오지 못했어요. 새로고침 해주세요.<br>' + (err && err.message || err) + '</p>';
+  });
+</script>
 </body>
 </html>
