@@ -72,7 +72,6 @@
   <div id="fab-menu" class="fab-menu hidden">
     <button class="fab-menu-item" onclick="fabMenuSelect('tag-delete')">🗑️ 태그 삭제</button>
     <button class="fab-menu-item" onclick="fabMenuSelect('tag')">🏷️ 태그 추가</button>
-    <button id="fab-video-group-btn" class="fab-menu-item hidden" onclick="fabMenuSelect('video-group')">🎬 영상 그룹 만들기</button>
     <button class="fab-menu-item" onclick="fabMenuSelect('series')">📚 새 시리즈</button>
   </div>
   <div id="fab-backdrop" class="fab-backdrop hidden" onclick="closeFabMenu()"></div>
@@ -244,25 +243,6 @@
       </div>
       <div class="modal-actions">
         <button class="btn btn-confirm" onclick="hideModal('modal-settings')">닫기</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ── MODAL: 영상 그룹 만들기 ── -->
-  <div id="modal-video-group" class="modal-backdrop">
-    <div class="modal">
-      <h3>🎬 영상 그룹 만들기</h3>
-      <p style="font-size:13px;color:var(--text2);margin-bottom:10px;line-height:1.5">
-        그룹으로 묶을 영상을 선택하세요 (여러 개 선택 가능)
-      </p>
-      <div id="video-group-pick-list" style="display:flex;flex-direction:column;gap:8px;max-height:38vh;overflow-y:auto;margin-bottom:14px"></div>
-
-      <label>그룹 이름</label>
-      <input type="text" id="video-group-name-input" placeholder="예) 여행 영상, 하이라이트..." maxlength="40">
-
-      <div class="modal-actions">
-        <button class="btn btn-cancel" onclick="hideModal('modal-video-group')">취소</button>
-        <button class="btn btn-confirm" onclick="saveVideoGroup()">그룹 만들기</button>
       </div>
     </div>
   </div>

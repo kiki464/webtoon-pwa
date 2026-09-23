@@ -487,18 +487,8 @@ html, body {
 .tag-delete-row.selected { border-color: var(--danger); background: rgba(255,77,109,.1); }
 .tag-delete-check { font-size: 18px; color: var(--danger); font-weight: 700; width: 24px; text-align: center; }
 
-.video-group-pick-row {
-  display: flex; align-items: center; gap: 10px;
-  background: var(--surface2); border-radius: 10px; padding: 8px 10px;
-  cursor: pointer; border: 1.5px solid transparent; transition: border-color .15s;
-}
-.video-group-pick-row.selected { border-color: var(--accent); background: rgba(0,212,170,.1); }
-.video-group-pick-thumb {
-  width: 44px; height: 44px; border-radius: 8px; flex-shrink: 0;
-  object-fit: cover; background: var(--surface);
-  display: flex; align-items: center; justify-content: center; font-size: 18px;
-}
-.video-group-pick-title { flex: 1; min-width: 0; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* "내 영상" 선택 모드에서 쓰는 체크마크/선택 표시 (행 자체는 .ep-item 재사용) */
+.ep-item.selected { border: 1.5px solid var(--accent); background: rgba(0,212,170,.1); }
 .video-group-pick-check { font-size: 18px; color: var(--accent); font-weight: 700; width: 22px; text-align: center; flex-shrink: 0; }
 
 /* ── VIDEO MODE ── */

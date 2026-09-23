@@ -175,17 +175,7 @@ async function switchTab(tab) {
   activeTagIds.clear();
   document.getElementById('search-input').value = '';
   document.getElementById('tag-filter-bar').classList.remove('visible');
-  if (tab === 'video') await ensureDefaultVideoGroup();
   renderHome();
-}
-
-// 영상 탭을 처음 열었을 때 바로 영상을 올릴 곳이 있도록, 영상 그룹이
-// 하나도 없으면 기본 그룹을 자동으로 하나 만들어둠
-async function ensureDefaultVideoGroup() {
-  const all = await dbGetAll('series');
-  if (!all.some(s => s.isVideoGroup === true)) {
-    await dbAdd('series', { title: '내 영상', coverUrl: null, tagIds: [], isVideoGroup: true, createdAt: Date.now() });
-  }
 }
 
 // ── ROUTING ──────────────────────────────────────────────────────────────────
@@ -202,7 +192,7 @@ async function render() {
   });
 
   const fab = document.getElementById('fab');
-  fab.classList.toggle('hidden', state.screen === 'reader');
+  fab.classList.toggle('hidden', state.screen === 'reader' || state.isAllVideos === true);
 
   if (state.screen === 'home') {
     await renderHome();
@@ -261,14 +251,16 @@ async function renderHome() {
   seriesCache.sort((a, b) => b.createdAt - a.createdAt);
 
   const container = document.getElementById('home-content');
+  const isVideoTab = currentTab === 'video';
 
-  if (!seriesCache.length) {
-    const isVideoTab = currentTab === 'video';
+  // 영상 탭은 "내 영상"(전체 영상 모아보기) 카드가 항상 떠 있어서 비어있는
+  // 상태가 없음 — 실제 그룹(series)이 하나도 없어도 이 카드로 들어가면 됨
+  if (!seriesCache.length && !isVideoTab) {
     container.innerHTML = `
       <div class="empty-state">
-        <div class="emoji">${isVideoTab ? '🎥' : '📖'}</div>
-        <h3>${isVideoTab ? '아직 영상 그룹이 없어요' : '아직 웹툰이 없어요'}</h3>
-        <p>+ 버튼을 눌러서<br>${isVideoTab ? '영상 그룹을 만들어 보세요!' : '첫 번째 시리즈를 만들어 보세요!'}</p>
+        <div class="emoji">📖</div>
+        <h3>아직 웹툰이 없어요</h3>
+        <p>+ 버튼을 눌러서<br>첫 번째 시리즈를 만들어 보세요!</p>
         <button class="empty-cta" onclick="openAddSeriesModal()">+ 시리즈 추가</button>
       </div>`;
     return;
@@ -277,8 +269,20 @@ async function renderHome() {
   const allEps = await dbGetAll('episodes');
   const epCount = {};
   allEps.forEach(ep => { epCount[ep.seriesId] = (epCount[ep.seriesId] || 0) + 1; });
+  const totalVideoCount = allEps.filter(ep => ep.type === 'video').length;
 
-  await renderTagFilterBar();
+  if (!isVideoTab) await renderTagFilterBar();
+
+  // "내 영상" — 실제 series 레코드가 아니라, 시리즈/탭 구분 없이 지금까지
+  // 올라간 모든 영상 회차를 한데 모아 보여주는 가상 카드 (openAllVideosView)
+  const allVideosCard = isVideoTab ? `
+    <div class="series-card" onclick="openAllVideosView()">
+      <div class="cover-empty">📼</div>
+      <div class="card-info">
+        <div class="card-title">내 영상</div>
+        <div class="card-count">전체 ${totalVideoCount}개</div>
+      </div>
+    </div>` : '';
 
   // 플레이스홀더로 먼저 렌더링
   const grid = seriesCache.map(s => {
@@ -292,16 +296,18 @@ async function renderHome() {
         <div class="cover-empty" id="cover-${s.id}">📚</div>
         <div class="card-info">
           <div class="card-title">${escHtml(s.title)}</div>
-          <div class="card-count">${count}화</div>
+          <div class="card-count">${s.isVideoGroup ? `${count}개` : `${count}화`}</div>
         </div>
       </div>`;
   }).join('');
 
   container.innerHTML = `
     <div class="section-title">전체 시리즈</div>
-    <div class="series-grid">${grid}</div>`;
+    <div class="series-grid">${allVideosCard}${grid}</div>`;
 
-  container.querySelectorAll('.series-card').forEach(card => {
+  // "내 영상" 가상 카드는 data-id가 없음(실제 series가 아님) — 롱프레스로 이름
+  // 변경/삭제하는 컨텍스트 메뉴 대상이 될 수 없으므로 건너뜀
+  container.querySelectorAll('.series-card[data-id]').forEach(card => {
     card.addEventListener('touchstart', e => {
       const id = +card.dataset.id;
       longPressTimer = setTimeout(() => showCtxMenuTouch(e.touches[0], 'series', id), 500);
@@ -324,6 +330,12 @@ async function renderHome() {
 
 async function renderEpisodes() {
   revokeThumbs();
+
+  if (state.isAllVideos) {
+    await renderAllVideosView();
+    return;
+  }
+
   const series = await dbGet('series', state.seriesId);
   if (!series) { navigate('home'); return; }
 
@@ -617,8 +629,6 @@ function toggleFabMenu() {
   document.getElementById('fab-menu').classList.toggle('hidden', !fabMenuOpen);
   document.getElementById('fab-backdrop').classList.toggle('hidden', !fabMenuOpen);
   document.getElementById('fab').style.transform = fabMenuOpen ? 'rotate(45deg)' : '';
-  // "영상 그룹 만들기"는 영상 탭에서만 의미가 있어서 그때만 보여줌
-  document.getElementById('fab-video-group-btn').classList.toggle('hidden', currentTab !== 'video');
 }
 function closeFabMenu() {
   fabMenuOpen = false;
@@ -631,7 +641,6 @@ function fabMenuSelect(type) {
   if (type === 'series') openAddSeriesModal();
   else if (type === 'tag') openAddTagModal();
   else if (type === 'tag-delete') openDeleteTagModal();
-  else if (type === 'video-group') openVideoGroupModal();
 }
 
 // ── SERIES TAG EDIT ──────────────────────────────────────────────────────────
@@ -2097,83 +2106,125 @@ async function downloadSingleVideo(episodeId) {
   }
 }
 
-// ── 영상 그룹 만들기 (선택한 영상들을 새 그룹으로 묶기) ──────────────────────
-let selectedVideoGroupEpisodeIds = new Set();
+// ── "내 영상" (전체 영상 모아보기) ────────────────────────────────────────────
+// 실제 series가 아니라, 어느 시리즈/탭에 있든 상관없이 지금까지 올라간 모든
+// 영상 회차를 최근 추가한 순으로 모아 보여주는 가상 화면. 여기서 몇 개를
+// 선택해 새 그룹(=series)을 만들 수 있음.
+let allVideosSelectMode = false;
+let selectedAllVideosIds = new Set();
 
-async function openVideoGroupModal() {
-  selectedVideoGroupEpisodeIds = new Set();
-  document.getElementById('video-group-name-input').value = '';
+function openAllVideosView() {
+  allVideosSelectMode = false;
+  selectedAllVideosIds = new Set();
+  navigate('episodes', { seriesId: null, isAllVideos: true });
+}
 
+async function renderAllVideosView() {
   const allSeries = await dbGetAll('series');
-  const videoGroupSeriesIds = new Set(allSeries.filter(s => s.isVideoGroup === true).map(s => s.id));
+  const seriesById = new Map(allSeries.map(s => [s.id, s]));
   const allEpisodes = await dbGetAll('episodes');
-  const videoEpisodes = allEpisodes
-    .filter(ep => videoGroupSeriesIds.has(ep.seriesId) && ep.type === 'video')
-    .sort((a, b) => b.createdAt - a.createdAt);
+  const videoEpisodes = allEpisodes.filter(ep => ep.type === 'video').sort((a, b) => b.createdAt - a.createdAt);
 
-  const wrap = document.getElementById('video-group-pick-list');
+  const header = document.getElementById('ep-header-ui');
+  header.innerHTML = `
+    <button class="header-back" onclick="navigate('home')">‹</button>
+    <span class="header-title">📼 내 영상</span>
+    ${allVideosSelectMode
+      ? `<button class="header-tag-btn" onclick="cancelAllVideosSelectMode()">취소</button>
+         <button class="header-action" onclick="confirmCreateGroupFromAllVideos()">그룹 만들기(${selectedAllVideosIds.size})</button>`
+      : `<button class="header-tag-btn" onclick="enterAllVideosSelectMode()">선택</button>`}`;
+
+  const container = document.getElementById('ep-content');
+
   if (!videoEpisodes.length) {
-    wrap.innerHTML = '<p style="color:var(--text2);font-size:14px;text-align:center;padding:12px">묶을 수 있는 영상이 없어요.<br>먼저 영상을 올려주세요.</p>';
-  } else {
-    wrap.innerHTML = videoEpisodes.map(ep => `
-      <div class="video-group-pick-row" id="vgrow-${ep.id}" onclick="toggleVideoGroupPick(${ep.id})">
-        <div class="video-group-pick-thumb" id="vgpthumb-${ep.id}">🎬</div>
-        <span class="video-group-pick-title">${escHtml(ep.title)}</span>
-        <span class="video-group-pick-check" id="vgpcheck-${ep.id}"></span>
-      </div>`
-    ).join('');
+    container.innerHTML = `
+      <div class="ep-header-cover-empty">📼</div>
+      <div class="empty-state" style="padding:40px 24px">
+        <div class="emoji">🎥</div>
+        <h3>아직 영상이 없어요</h3>
+        <p>시리즈 안에서 영상을 올리면<br>여기 모아서 보여줘요</p>
+      </div>`;
+    return;
+  }
 
-    for (const ep of videoEpisodes) {
-      const url = await getEpisodeCoverUrl(ep.id);
-      if (url) {
-        thumbBlobUrls.push(url);
-        const el = document.getElementById(`vgpthumb-${ep.id}`);
-        if (el) el.outerHTML = `<img class="video-group-pick-thumb" id="vgpthumb-${ep.id}" src="${url}">`;
-      }
+  const items = videoEpisodes.map(ep => {
+    const seriesTitle = seriesById.get(ep.seriesId)?.title || '';
+    const selected = selectedAllVideosIds.has(ep.id);
+    const clickAction = allVideosSelectMode
+      ? `toggleAllVideosPick(${ep.id})`
+      : `navigate('reader',{seriesId:${ep.seriesId},episodeId:${ep.id}})`;
+    return `
+      <div class="ep-item${selected ? ' selected' : ''}" id="avitem-${ep.id}" onclick="${clickAction}">
+        <div class="ep-thumb-empty" id="epthumb-${ep.id}">🎬</div>
+        <div class="ep-info">
+          <div class="ep-title">${escHtml(ep.title)}</div>
+          <div class="ep-sub">${escHtml(seriesTitle)}</div>
+        </div>
+        ${allVideosSelectMode ? `<span class="video-group-pick-check" id="avcheck-${ep.id}">${selected ? '✓' : ''}</span>` : ''}
+      </div>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="ep-header-cover-empty">📼</div>
+    <div class="ep-meta">
+      <h2>내 영상</h2>
+      <p style="margin-top:6px">${videoEpisodes.length}개 (전체 시리즈 통합)</p>
+    </div>
+    <div class="ep-list">${items}</div>`;
+
+  for (const ep of videoEpisodes) {
+    const url = await getEpisodeCoverUrl(ep.id);
+    if (url) {
+      thumbBlobUrls.push(url);
+      const el = document.getElementById(`epthumb-${ep.id}`);
+      if (el) el.outerHTML = `<img class="ep-thumb" src="${url}">`;
     }
   }
-
-  showModal('modal-video-group');
 }
 
-function toggleVideoGroupPick(episodeId) {
-  const row = document.getElementById(`vgrow-${episodeId}`);
-  const check = document.getElementById(`vgpcheck-${episodeId}`);
-  if (selectedVideoGroupEpisodeIds.has(episodeId)) {
-    selectedVideoGroupEpisodeIds.delete(episodeId);
-    row.classList.remove('selected');
-    check.textContent = '';
-  } else {
-    selectedVideoGroupEpisodeIds.add(episodeId);
-    row.classList.add('selected');
-    check.textContent = '✓';
-  }
+function enterAllVideosSelectMode() {
+  allVideosSelectMode = true;
+  selectedAllVideosIds = new Set();
+  renderAllVideosView();
 }
 
-async function saveVideoGroup() {
-  const name = document.getElementById('video-group-name-input').value.trim();
-  if (!name) { alert('그룹 이름을 입력해주세요'); return; }
-  if (!selectedVideoGroupEpisodeIds.size) { alert('영상을 하나 이상 선택해주세요'); return; }
+function cancelAllVideosSelectMode() {
+  allVideosSelectMode = false;
+  selectedAllVideosIds = new Set();
+  renderAllVideosView();
+}
+
+function toggleAllVideosPick(episodeId) {
+  if (selectedAllVideosIds.has(episodeId)) selectedAllVideosIds.delete(episodeId);
+  else selectedAllVideosIds.add(episodeId);
+  renderAllVideosView();
+}
+
+async function confirmCreateGroupFromAllVideos() {
+  if (!selectedAllVideosIds.size) { alert('영상을 하나 이상 선택해주세요'); return; }
+
+  const name = await showRename('그룹 이름', '');
+  if (!name || !name.trim()) return;
+  const title = name.trim();
 
   const existing = await dbGetAll('series');
-  if (existing.find(s => s.title.trim() === name)) {
-    hideModal('modal-video-group');
-    await showConfirm('같은 이름이 있어요', `"${name}" 이름이 이미 있어요.\n다른 이름을 사용해 주세요.`, '확인', 'background:var(--accent);color:#000');
-    showModal('modal-video-group');
+  if (existing.find(s => s.title.trim() === title)) {
+    await showConfirm('같은 이름이 있어요', `"${title}" 이름이 이미 있어요.\n다른 이름을 사용해 주세요.`, '확인', 'background:var(--accent);color:#000');
     return;
   }
 
   // 썸네일은 사용자가 직접 "표지 변경하기"로 나중에 설정 — 여기선 비워둠
-  const newSeriesId = await dbAdd('series', { title: name, coverUrl: null, tagIds: [], isVideoGroup: true, createdAt: Date.now() });
+  const newSeriesId = await dbAdd('series', { title, coverUrl: null, tagIds: [], isVideoGroup: true, createdAt: Date.now() });
 
-  // 선택한 영상들을 새 그룹으로 옮김(원래 그룹에서는 빠짐) — 업로드 시각(createdAt)은
-  // 그대로 유지되므로 "최근 추가한 순" 정렬 결과도 그대로 보존됨
-  for (const epId of selectedVideoGroupEpisodeIds) {
+  // 선택한 영상들을 새 그룹으로 옮김(원래 있던 시리즈에서는 빠짐) — 업로드
+  // 시각(createdAt)은 그대로 유지되므로 "최근 추가한 순" 정렬도 보존됨
+  for (const epId of selectedAllVideosIds) {
     const ep = await dbGet('episodes', epId);
     if (ep) await dbPut('episodes', { ...ep, seriesId: newSeriesId });
   }
 
-  hideModal('modal-video-group');
+  allVideosSelectMode = false;
+  selectedAllVideosIds = new Set();
   navigate('episodes', { seriesId: newSeriesId });
 }
 
@@ -2306,7 +2357,7 @@ async function init() {
   // Event listeners
   document.getElementById('fab').addEventListener('click', async () => {
     if (state.screen === 'home') toggleFabMenu();
-    else if (state.screen === 'episodes') {
+    else if (state.screen === 'episodes' && !state.isAllVideos) {
       const series = await dbGet('series', state.seriesId);
       if (series?.isVideoGroup) openVideoUploadModal();
       else openAddEpisodeModal();
@@ -2327,9 +2378,6 @@ async function init() {
   });
   document.getElementById('modal-video-export-list').addEventListener('click', e => {
     if (e.target === e.currentTarget) hideModal('modal-video-export-list');
-  });
-  document.getElementById('modal-video-group').addEventListener('click', e => {
-    if (e.target === e.currentTarget) hideModal('modal-video-group');
   });
 
   document.getElementById('series-pick-area').addEventListener('click', () => {
