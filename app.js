@@ -580,57 +580,88 @@ async function ensureDefaultVideoBucket() {
   });
 }
 
+function withTimeout(promise, ms, message) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(message || '시간 초과')), ms))
+  ]);
+}
+
 async function saveVideoEpisode() {
   const title = document.getElementById('video-ep-name-input').value.trim();
   if (!title) { alert('회차 이름을 입력해주세요'); return; }
   if (!pendingVideoFile) { alert('영상을 선택해주세요'); return; }
 
+  const videoFile = pendingVideoFile;
+  const thumbFile = pendingThumbFile;
+
   showProgress();
-  setProgress(10);
+  setProgress(15);
 
-  // "내 영상"에서 직접 추가한 경우엔 소속될 시리즈가 없으므로 기본 보관함으로
-  const targetSeriesId = (state.isAllVideos || state.seriesId == null)
-    ? await ensureDefaultVideoBucket()
-    : state.seriesId;
+  let epId = null;
+  try {
+    // "내 영상"에서 직접 추가한 경우엔 소속될 시리즈가 없으므로 기본 보관함으로
+    const targetSeriesId = (state.isAllVideos || state.seriesId == null)
+      ? await ensureDefaultVideoBucket()
+      : state.seriesId;
 
-  const existingEpisodes = await dbGetAll('episodes', 'seriesId', targetSeriesId);
-  const order = existingEpisodes.length;
-  const epId = await dbAdd('episodes', {
-    seriesId: targetSeriesId, title, order, type: 'video', thumbUrl: null, imageCount: 0, createdAt: Date.now()
-  });
+    const existingEpisodes = await dbGetAll('episodes', 'seriesId', targetSeriesId);
+    const order = existingEpisodes.length;
+    epId = await dbAdd('episodes', {
+      seriesId: targetSeriesId, title, order, type: 'video', thumbUrl: null, imageCount: 0, createdAt: Date.now()
+    });
+    setProgress(35);
 
-  const videoBuf = await readFileAsBlob(pendingVideoFile);
-  setProgress(55);
+    // FileReader로 영상 전체를 ArrayBuffer로 읽어서 저장하던 이전 방식은
+    // 파일 크기만큼 메모리에 통째로 올려야 했음 — 큰 영상에서 iOS Safari가
+    // 멈추는(진행률이 70~80%에서 안 움직이는) 원인이 이거였을 가능성이 높음.
+    // IndexedDB는 File/Blob을 그대로 저장할 수 있어서, 브라우저가 알아서
+    // 처리하도록 File 객체 자체를 넘김 (읽기 단계 자체가 없어짐).
+    // 썸네일은 선택 사항 — 안 고르면 아예 저장 안 하고, getEpisodeCoverUrl이
+    // 표시할 때 시리즈 표지로 대체해서 보여줌
+    const thumbType = thumbFile ? (thumbFile.type || 'image/jpeg') : null;
 
-  // 썸네일은 선택 사항 — 안 고르면 아예 저장 안 하고, getEpisodeCoverUrl이
-  // 표시할 때 시리즈 표지로 대체해서 보여줌
-  let thumbBuf = null, thumbType = null;
-  if (pendingThumbFile) {
-    thumbBuf = await readFileAsBlob(pendingThumbFile);
-    thumbType = pendingThumbFile.type || 'image/jpeg';
-  }
-  setProgress(75);
+    // 그래도 저장이 멈추는 경우를 대비해 타임아웃을 둠 (파일 용량에 비례,
+    // 최소 30초) — 그냥 계속 멈춰있지 않고 실패로 처리해서 사용자에게 알림
+    await withTimeout(
+      dbAdd('videos', {
+        episodeId: epId,
+        videoData: videoFile, videoType: videoFile.type || 'video/mp4', videoName: videoFile.name,
+        thumbData: thumbFile || null, thumbType
+      }),
+      Math.max(30000, (videoFile.size / (1024 * 1024)) * 1000),
+      '영상 저장이 너무 오래 걸려요'
+    );
+    setProgress(90);
 
-  await dbAdd('videos', {
-    episodeId: epId,
-    videoData: videoBuf, videoType: pendingVideoFile.type || 'video/mp4', videoName: pendingVideoFile.name,
-    thumbData: thumbBuf, thumbType: thumbType
-  });
-
-  // 썸네일을 직접 골랐고, 시리즈 표지가 아직 없으면 이걸로 채워줌
-  if (thumbBuf) {
-    const thumbDataUrl = await bufToDataUrl(thumbBuf, thumbType);
-    const series = await dbGet('series', targetSeriesId);
-    if (!series.coverUrl) {
-      await dbPut('series', { ...series, coverUrl: thumbDataUrl });
+    // 썸네일을 직접 골랐고, 시리즈 표지가 아직 없으면 이걸로 채워줌
+    if (thumbFile) {
+      const thumbDataUrl = await bufToDataUrl(thumbFile, thumbType);
+      const series = await dbGet('series', targetSeriesId);
+      if (!series.coverUrl) {
+        await dbPut('series', { ...series, coverUrl: thumbDataUrl });
+      }
     }
-  }
 
-  pendingVideoFile = null;
-  pendingThumbFile = null;
-  hideProgress();
-  hideModal('modal-add-video');
-  await renderEpisodes(); // isAllVideos 상태를 그대로 보고 알맞은 화면을 다시 그림
+    pendingVideoFile = null;
+    pendingThumbFile = null;
+    hideModal('modal-add-video');
+    await renderEpisodes(); // isAllVideos 상태를 그대로 보고 알맞은 화면을 다시 그림
+  } catch (err) {
+    // 실패하면 만들어뒀던 빈 회차(및 혹시 저장된 영상 조각)도 같이 정리해서
+    // 껍데기만 남지 않게 함
+    if (epId != null) {
+      try { await dbDelete('episodes', epId); } catch (_) {}
+      try { await dbDeleteByIndex('videos', 'episodeId', epId); } catch (_) {}
+    }
+    await showConfirm(
+      '영상 저장 실패',
+      '영상을 저장하지 못했어요.\n' + (err && err.message || err) + '\n\n영상 파일이 너무 크면 실패할 수 있어요. 더 작은 영상으로 다시 시도해보세요.',
+      '확인', ''
+    );
+  } finally {
+    hideProgress();
+  }
 }
 
 function showModal(id) {
