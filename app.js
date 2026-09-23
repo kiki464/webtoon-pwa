@@ -244,6 +244,9 @@ async function renderHome() {
   if (searchEl) searchEl.value = '';
   seriesCache = await dbGetAll('series');
   seriesCache = seriesCache.filter(s => {
+    // "미분류 영상" 기본 보관함은 내부용 — 카드로 따로 안 보여주고, 안에 든
+    // 영상들은 "내 영상"(전체 모아보기)에서만 보여줌
+    if (s.isDefaultVideoBucket === true) return false;
     if (currentTab === 'video') return s.isVideoGroup === true;
     if (currentTab === 'adult') return s.isAdult === true && s.isVideoGroup !== true;
     return s.isAdult !== true && s.isVideoGroup !== true;
@@ -2180,7 +2183,10 @@ async function renderAllVideosView() {
   }
 
   const items = videoEpisodes.map(ep => {
-    const seriesTitle = seriesById.get(ep.seriesId)?.title || '';
+    // 기본 보관함 소속은 내부 구현일 뿐이라 이름을 노출하지 않음 (사용자가
+    // 직접 만든 그룹에 있을 때만 어느 그룹인지 표시)
+    const ownerSeries = seriesById.get(ep.seriesId);
+    const seriesTitle = ownerSeries?.isDefaultVideoBucket ? '' : (ownerSeries?.title || '');
     const selected = selectedAllVideosIds.has(ep.id);
     const clickAction = allVideosSelectMode
       ? `toggleAllVideosPick(${ep.id})`
