@@ -1227,15 +1227,20 @@ function showCtxAt(x, y, type, id) {
   menu.style.top = top + 'px';
 
   document.getElementById('ctx-cover').style.display = type === 'series' ? 'flex' : 'none';
-  document.getElementById('ctx-adult-toggle').style.display = type === 'series' ? 'flex' : 'none';
+  document.getElementById('ctx-video-toggle').style.display = type === 'series' ? 'flex' : 'none';
   document.getElementById('ctx-rename').style.display = 'flex';
   document.getElementById('ctx-delete').style.display = 'flex';
 
-  // 성인 토글 버튼 텍스트 업데이트
+  // 성인/영상 토글 버튼 표시·텍스트 업데이트
   if (type === 'series') {
     const s = seriesCache.find(s => s.id === id);
     const isAdult = s?.isAdult === true;
+    const isVideoGroup = s?.isVideoGroup === true;
+    // 영상 탭으로 옮긴 시리즈는 일반/성인 구분이 화면에 안 드러나므로
+    // 성인 토글은 숨김 (영상 탭에서 빼면 다시 나타남)
+    document.getElementById('ctx-adult-toggle').style.display = isVideoGroup ? 'none' : 'flex';
     document.getElementById('ctx-adult-toggle').textContent = isAdult ? '✅ 일반으로 설정' : '🔞 성인으로 설정';
+    document.getElementById('ctx-video-toggle').textContent = isVideoGroup ? '📚 일반 탭으로 이동' : '🎥 영상 탭으로 이동';
   }
 }
 
@@ -1269,6 +1274,16 @@ async function ctxToggleAdult() {
   if (!target || target.type !== 'series') return;
   const series = await dbGet('series', target.id);
   await dbPut('series', { ...series, isAdult: !series.isAdult });
+  await renderHome();
+}
+
+async function ctxToggleVideoGroup() {
+  const target = ctxTarget;
+  hideCtxMenu();
+  if (!target || target.type !== 'series') return;
+  const series = await dbGet('series', target.id);
+  // isAdult는 그대로 둠 — 영상 탭에서 다시 빼면 원래 있던 일반/성인 자리로 복귀
+  await dbPut('series', { ...series, isVideoGroup: !series.isVideoGroup });
   await renderHome();
 }
 
