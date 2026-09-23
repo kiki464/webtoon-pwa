@@ -31,8 +31,17 @@ self.addEventListener('fetch', e => {
     // Network-first: always try to get the latest code; fall back to the
     // cached shell only when offline. This is what makes code updates show
     // up on a normal refresh — no cache-name/version bump required.
+    //
+    // IMPORTANT: fetch(e.request) still honors the browser's own HTTP cache
+    // (a separate layer from the Cache Storage API used above/below) — if
+    // GitHub Pages' response for e.g. app.js is still considered "fresh" by
+    // that cache, this would silently return stale bytes even though we
+    // "tried" the network, and different files can go stale independently
+    // (index.html updates while app.js doesn't, etc). Fetching by URL string
+    // with cache:'no-store' bypasses that HTTP cache entirely so every file
+    // in the app shell is always genuinely re-fetched from the network.
     e.respondWith(
-      fetch(e.request)
+      fetch(url.pathname + url.search, { cache: 'no-store' })
         .then(res => {
           const clone = res.clone();
           caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
