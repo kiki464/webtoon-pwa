@@ -165,16 +165,27 @@ let selectedTagIdsForNew = new Set(); // 새 시리즈 만들기에서 선택된
 const TAG_COLORS = ['#00d4aa','#7b5ea7','#ff6b6b','#ffd166','#06d6a0','#118ab2','#ef476f','#f77f00'];
 function tagColor(id) { return TAG_COLORS[id % TAG_COLORS.length]; }
 
-let currentTab = 'normal'; // 'normal' | 'adult'
+let currentTab = 'normal'; // 'normal' | 'adult' | 'video'
 
-function switchTab(tab) {
+async function switchTab(tab) {
   currentTab = tab;
   document.getElementById('tab-normal').classList.toggle('active', tab === 'normal');
   document.getElementById('tab-adult').classList.toggle('active', tab === 'adult');
+  document.getElementById('tab-video').classList.toggle('active', tab === 'video');
   activeTagIds.clear();
   document.getElementById('search-input').value = '';
   document.getElementById('tag-filter-bar').classList.remove('visible');
+  if (tab === 'video') await ensureDefaultVideoGroup();
   renderHome();
+}
+
+// 영상 탭을 처음 열었을 때 바로 영상을 올릴 곳이 있도록, 영상 그룹이
+// 하나도 없으면 기본 그룹을 자동으로 하나 만들어둠
+async function ensureDefaultVideoGroup() {
+  const all = await dbGetAll('series');
+  if (!all.some(s => s.isVideoGroup === true)) {
+    await dbAdd('series', { title: '내 영상', coverUrl: null, tagIds: [], isVideoGroup: true, createdAt: Date.now() });
+  }
 }
 
 // ── ROUTING ──────────────────────────────────────────────────────────────────
@@ -242,17 +253,22 @@ async function renderHome() {
   const searchEl = document.getElementById('search-input');
   if (searchEl) searchEl.value = '';
   seriesCache = await dbGetAll('series');
-  seriesCache = seriesCache.filter(s => currentTab === 'adult' ? s.isAdult === true : s.isAdult !== true);
+  seriesCache = seriesCache.filter(s => {
+    if (currentTab === 'video') return s.isVideoGroup === true;
+    if (currentTab === 'adult') return s.isAdult === true && s.isVideoGroup !== true;
+    return s.isAdult !== true && s.isVideoGroup !== true;
+  });
   seriesCache.sort((a, b) => b.createdAt - a.createdAt);
 
   const container = document.getElementById('home-content');
 
   if (!seriesCache.length) {
+    const isVideoTab = currentTab === 'video';
     container.innerHTML = `
       <div class="empty-state">
-        <div class="emoji">📖</div>
-        <h3>아직 웹툰이 없어요</h3>
-        <p>+ 버튼을 눌러서<br>첫 번째 시리즈를 만들어 보세요!</p>
+        <div class="emoji">${isVideoTab ? '🎥' : '📖'}</div>
+        <h3>${isVideoTab ? '아직 영상 그룹이 없어요' : '아직 웹툰이 없어요'}</h3>
+        <p>+ 버튼을 눌러서<br>${isVideoTab ? '영상 그룹을 만들어 보세요!' : '첫 번째 시리즈를 만들어 보세요!'}</p>
         <button class="empty-cta" onclick="openAddSeriesModal()">+ 시리즈 추가</button>
       </div>`;
     return;
@@ -311,24 +327,30 @@ async function renderEpisodes() {
   const series = await dbGet('series', state.seriesId);
   if (!series) { navigate('home'); return; }
 
+  const isVideoGroup = series.isVideoGroup === true;
+
   const header = document.getElementById('ep-header-ui');
   header.innerHTML = `
     <button class="header-back" onclick="navigate('home')">‹</button>
     <span class="header-title">${escHtml(series.title)}</span>
     <button class="header-tag-btn" onclick="openSeriesTagModal()">🏷️ 태그</button>
-    <button class="header-action" onclick="openAddEpisodeModal()">+ 추가</button>`;
+    <button class="header-action" onclick="${isVideoGroup ? 'openVideoUploadModal()' : 'openAddEpisodeModal()'}">+ 추가</button>`;
 
   episodeCache = await dbGetAll('episodes', 'seriesId', state.seriesId);
-  episodeCache.sort((a, b) => a.order - b.order);
+  // 영상 그룹은 수동 순서 대신 "최근 추가한 순"(최신이 위)으로 항상 정렬
+  if (isVideoGroup) episodeCache.sort((a, b) => b.createdAt - a.createdAt);
+  else episodeCache.sort((a, b) => a.order - b.order);
 
   const epItems = episodeCache.length === 0
     ? `<div class="empty-state" style="padding:40px 24px">
-        <div class="emoji">🗂️</div>
-        <h3>회차가 없어요</h3>
-        <p>위의 + 추가를 눌러<br>이미지를 업로드하세요</p>
+        <div class="emoji">${isVideoGroup ? '🎥' : '🗂️'}</div>
+        <h3>${isVideoGroup ? '영상이 없어요' : '회차가 없어요'}</h3>
+        <p>위의 + 추가를 눌러<br>${isVideoGroup ? '영상을 업로드하세요' : '이미지를 업로드하세요'}</p>
        </div>`
     : episodeCache.map(ep => {
         const sub = ep.type === 'video' ? '🎥 영상' : `${ep.imageCount || 0}장`;
+        // 영상 그룹은 정렬이 항상 최근순으로 고정이라 드래그 핸들(수동 재정렬)이 필요 없음
+        const dragHandle = isVideoGroup ? '' : `<span class="ep-drag-handle" data-ep-id="${ep.id}">☰</span>`;
         return `
           <div class="ep-item" data-id="${ep.id}"
                onclick="navigate('reader',{seriesId:${state.seriesId},episodeId:${ep.id}})"
@@ -339,7 +361,7 @@ async function renderEpisodes() {
               <div class="ep-title">${escHtml(ep.title)}</div>
               <div class="ep-sub">${sub}</div>
             </div>
-            <span class="ep-drag-handle" data-ep-id="${ep.id}">☰</span>
+            ${dragHandle}
           </div>`;
       }).join('');
 
@@ -382,7 +404,7 @@ async function renderEpisodes() {
     }
   }
 
-  initEpDragDrop();
+  if (!isVideoGroup) initEpDragDrop();
 }
 
 async function renderReader() {
@@ -595,6 +617,8 @@ function toggleFabMenu() {
   document.getElementById('fab-menu').classList.toggle('hidden', !fabMenuOpen);
   document.getElementById('fab-backdrop').classList.toggle('hidden', !fabMenuOpen);
   document.getElementById('fab').style.transform = fabMenuOpen ? 'rotate(45deg)' : '';
+  // "영상 그룹 만들기"는 영상 탭에서만 의미가 있어서 그때만 보여줌
+  document.getElementById('fab-video-group-btn').classList.toggle('hidden', currentTab !== 'video');
 }
 function closeFabMenu() {
   fabMenuOpen = false;
@@ -607,6 +631,7 @@ function fabMenuSelect(type) {
   if (type === 'series') openAddSeriesModal();
   else if (type === 'tag') openAddTagModal();
   else if (type === 'tag-delete') openDeleteTagModal();
+  else if (type === 'video-group') openVideoGroupModal();
 }
 
 // ── SERIES TAG EDIT ──────────────────────────────────────────────────────────
@@ -745,7 +770,10 @@ async function saveSeries() {
     return;
   }
 
-  const id = await dbAdd('series', { title, coverUrl: null, tagIds: [...selectedTagIdsForNew], createdAt: Date.now() });
+  const id = await dbAdd('series', {
+    title, coverUrl: null, tagIds: [...selectedTagIdsForNew], createdAt: Date.now(),
+    isVideoGroup: currentTab === 'video' // 영상 탭에서 만들면 영상 전용 그룹으로 표시
+  });
 
   // If files were picked, auto-create first episode
   if (pendingFiles && pendingFiles.length > 0) {
@@ -1334,6 +1362,7 @@ function goHomeReset() {
   currentTab = 'normal';
   document.getElementById('tab-normal')?.classList.add('active');
   document.getElementById('tab-adult')?.classList.remove('active');
+  document.getElementById('tab-video')?.classList.remove('active');
   navigate('home');
 }
 
@@ -2068,6 +2097,86 @@ async function downloadSingleVideo(episodeId) {
   }
 }
 
+// ── 영상 그룹 만들기 (선택한 영상들을 새 그룹으로 묶기) ──────────────────────
+let selectedVideoGroupEpisodeIds = new Set();
+
+async function openVideoGroupModal() {
+  selectedVideoGroupEpisodeIds = new Set();
+  document.getElementById('video-group-name-input').value = '';
+
+  const allSeries = await dbGetAll('series');
+  const videoGroupSeriesIds = new Set(allSeries.filter(s => s.isVideoGroup === true).map(s => s.id));
+  const allEpisodes = await dbGetAll('episodes');
+  const videoEpisodes = allEpisodes
+    .filter(ep => videoGroupSeriesIds.has(ep.seriesId) && ep.type === 'video')
+    .sort((a, b) => b.createdAt - a.createdAt);
+
+  const wrap = document.getElementById('video-group-pick-list');
+  if (!videoEpisodes.length) {
+    wrap.innerHTML = '<p style="color:var(--text2);font-size:14px;text-align:center;padding:12px">묶을 수 있는 영상이 없어요.<br>먼저 영상을 올려주세요.</p>';
+  } else {
+    wrap.innerHTML = videoEpisodes.map(ep => `
+      <div class="video-group-pick-row" id="vgrow-${ep.id}" onclick="toggleVideoGroupPick(${ep.id})">
+        <div class="video-group-pick-thumb" id="vgpthumb-${ep.id}">🎬</div>
+        <span class="video-group-pick-title">${escHtml(ep.title)}</span>
+        <span class="video-group-pick-check" id="vgpcheck-${ep.id}"></span>
+      </div>`
+    ).join('');
+
+    for (const ep of videoEpisodes) {
+      const url = await getEpisodeCoverUrl(ep.id);
+      if (url) {
+        thumbBlobUrls.push(url);
+        const el = document.getElementById(`vgpthumb-${ep.id}`);
+        if (el) el.outerHTML = `<img class="video-group-pick-thumb" id="vgpthumb-${ep.id}" src="${url}">`;
+      }
+    }
+  }
+
+  showModal('modal-video-group');
+}
+
+function toggleVideoGroupPick(episodeId) {
+  const row = document.getElementById(`vgrow-${episodeId}`);
+  const check = document.getElementById(`vgpcheck-${episodeId}`);
+  if (selectedVideoGroupEpisodeIds.has(episodeId)) {
+    selectedVideoGroupEpisodeIds.delete(episodeId);
+    row.classList.remove('selected');
+    check.textContent = '';
+  } else {
+    selectedVideoGroupEpisodeIds.add(episodeId);
+    row.classList.add('selected');
+    check.textContent = '✓';
+  }
+}
+
+async function saveVideoGroup() {
+  const name = document.getElementById('video-group-name-input').value.trim();
+  if (!name) { alert('그룹 이름을 입력해주세요'); return; }
+  if (!selectedVideoGroupEpisodeIds.size) { alert('영상을 하나 이상 선택해주세요'); return; }
+
+  const existing = await dbGetAll('series');
+  if (existing.find(s => s.title.trim() === name)) {
+    hideModal('modal-video-group');
+    await showConfirm('같은 이름이 있어요', `"${name}" 이름이 이미 있어요.\n다른 이름을 사용해 주세요.`, '확인', 'background:var(--accent);color:#000');
+    showModal('modal-video-group');
+    return;
+  }
+
+  // 썸네일은 사용자가 직접 "표지 변경하기"로 나중에 설정 — 여기선 비워둠
+  const newSeriesId = await dbAdd('series', { title: name, coverUrl: null, tagIds: [], isVideoGroup: true, createdAt: Date.now() });
+
+  // 선택한 영상들을 새 그룹으로 옮김(원래 그룹에서는 빠짐) — 업로드 시각(createdAt)은
+  // 그대로 유지되므로 "최근 추가한 순" 정렬 결과도 그대로 보존됨
+  for (const epId of selectedVideoGroupEpisodeIds) {
+    const ep = await dbGet('episodes', epId);
+    if (ep) await dbPut('episodes', { ...ep, seriesId: newSeriesId });
+  }
+
+  hideModal('modal-video-group');
+  navigate('episodes', { seriesId: newSeriesId });
+}
+
 async function onImportFileSelected(e) {
   const file = e.target.files[0];
   e.target.value = '';
@@ -2195,9 +2304,13 @@ async function init() {
   }
 
   // Event listeners
-  document.getElementById('fab').addEventListener('click', () => {
+  document.getElementById('fab').addEventListener('click', async () => {
     if (state.screen === 'home') toggleFabMenu();
-    else if (state.screen === 'episodes') openAddEpisodeModal();
+    else if (state.screen === 'episodes') {
+      const series = await dbGet('series', state.seriesId);
+      if (series?.isVideoGroup) openVideoUploadModal();
+      else openAddEpisodeModal();
+    }
   });
 
   document.getElementById('modal-add-series').addEventListener('click', e => {
@@ -2214,6 +2327,9 @@ async function init() {
   });
   document.getElementById('modal-video-export-list').addEventListener('click', e => {
     if (e.target === e.currentTarget) hideModal('modal-video-export-list');
+  });
+  document.getElementById('modal-video-group').addEventListener('click', e => {
+    if (e.target === e.currentTarget) hideModal('modal-video-group');
   });
 
   document.getElementById('series-pick-area').addEventListener('click', () => {
