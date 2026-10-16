@@ -457,7 +457,14 @@ async function renderReader() {
       return;
     }
     const v = vids[0];
-    const videoUrl = bufToUrl(v.videoData, v.videoType);
+    // iOS Safari has a known bug where a video Blob/File read back from
+    // IndexedDB can fail to decode (play button shows a crossed-out/no-entry
+    // overlay) even though it stored and loaded fine — re-materializing a
+    // fresh Blob from its actual bytes instead of reusing the IndexedDB
+    // -returned object directly is the standard workaround.
+    const videoUrl = v.videoData instanceof Blob
+      ? bufToUrl(await v.videoData.arrayBuffer(), v.videoType)
+      : bufToUrl(v.videoData, v.videoType);
     blobUrlsToRevoke.push(videoUrl);
     const prevDisabled = epIdx <= 0 ? 'disabled' : '';
     const nextDisabled = epIdx >= episodeCache.length - 1 ? 'disabled' : '';
