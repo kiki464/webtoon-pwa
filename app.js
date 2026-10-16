@@ -589,7 +589,38 @@ function pickVideoUploadFile(e) {
   const file = e.target.files[0];
   if (!file) return;
   pendingVideoFile = file;
-  document.getElementById('video-upload-file-count').textContent = `🎬 ${file.name}`;
+  document.getElementById('video-upload-file-count').textContent = `🎬 ${file.name} (확인 중...)`;
+  checkVideoPlayability(file);
+}
+
+// 컴퓨터에서 받은 영상은 코덱(VP9/AV1 등)이 사파리와 안 맞아서 .mp4
+// 확장자여도 재생이 안 되는 경우가 있음 — 업로드하고 나서 뒤늦게 알기보다
+// 파일 고르는 즉시 이 브라우저에서 디코딩 가능한지 미리 테스트해서 알려줌.
+// 업로드 자체를 막지는 않음(판단 애매한 경우도 있고, 다른 기기에선 될 수도
+// 있어서) — 경고만 보여주고 선택은 사용자에게 맡김
+function checkVideoPlayability(file) {
+  const testUrl = URL.createObjectURL(file);
+  const testVideo = document.createElement('video');
+  testVideo.preload = 'metadata';
+  testVideo.muted = true;
+
+  let settled = false;
+  const finish = ok => {
+    if (settled) return;
+    settled = true;
+    URL.revokeObjectURL(testUrl);
+    if (pendingVideoFile !== file) return; // 그 사이 다른 파일로 바뀌었으면 무시
+    const countEl = document.getElementById('video-upload-file-count');
+    if (!countEl) return;
+    countEl.innerHTML = ok
+      ? `🎬 ${escHtml(file.name)}`
+      : `🎬 ${escHtml(file.name)}<br><span style="color:var(--danger)">⚠️ 이 기기에서 재생이 안 될 수 있어요 (코덱 비호환 의심 — 그래도 저장은 가능)</span>`;
+  };
+
+  const timeout = setTimeout(() => finish(true), 4000); // 판단 못 하면 통과(오탐 방지)
+  testVideo.addEventListener('loadedmetadata', () => { clearTimeout(timeout); finish(true); }, { once: true });
+  testVideo.addEventListener('error', () => { clearTimeout(timeout); finish(false); }, { once: true });
+  testVideo.src = testUrl;
 }
 
 function pickVideoUploadThumb(e) {
