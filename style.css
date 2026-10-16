@@ -213,6 +213,11 @@ html, body {
   backdrop-filter: blur(6px); cursor: pointer;
 }
 .video-ep-nav-btn:disabled { opacity: .25; }
+.video-error-msg {
+  position: absolute; bottom: 90px; left: 0; right: 0; z-index: 12;
+  text-align: center; color: #ff6b6b; font-size: 13px; font-weight: 600;
+  padding: 0 24px; text-shadow: 0 1px 4px rgba(0,0,0,.8);
+}
 
 /* Reader overlay (tap to show/hide) */
 .reader-overlay-top {

@@ -451,32 +451,57 @@ async function renderReader() {
   revokeOldUrls();
 
   if (isVideoEp) {
-    const vids = await dbGetAll('videos', 'episodeId', state.episodeId);
-    if (!vids.length) {
-      container.innerHTML = `<div class="empty-state"><div class="emoji">🎥</div><h3>영상이 없어요</h3></div>`;
-      return;
+    try {
+      const vids = await dbGetAll('videos', 'episodeId', state.episodeId);
+      if (!vids.length) {
+        container.innerHTML = `<div class="empty-state"><div class="emoji">🎥</div><h3>영상이 없어요</h3></div>`;
+        return;
+      }
+      const v = vids[0];
+
+      // iOS Safari가 IndexedDB에서 꺼낸 Blob을 그대로 재생시키면 가끔
+      // 디코딩을 거부하는(재생 버튼에 금지 아이콘) 버그가 있어서, 바이트를
+      // 다시 읽어 새 Blob으로 만들어주면 우회가 됨. 다만 이걸 큰 파일에도
+      // 똑같이 적용했더니 이번엔 반대로 전체를 메모리에 올리다 기기가
+      // 통째로 죽는(반복 크래시) 문제가 실제로 재현됨 — 그래서 안전한
+      // 용량까지만 이 우회를 적용하고, 그 이상은 그냥 Blob을 직접 사용함
+      // (크래시보다는 재생 버그 쪽이 낫고, 애초에 대부분의 영상은 이
+      // 기준보다 작아서 우회 혜택을 그대로 받음).
+      const SAFE_MATERIALIZE_BYTES = 50 * 1024 * 1024; // 50MB
+      const videoUrl = (v.videoData instanceof Blob && v.videoData.size <= SAFE_MATERIALIZE_BYTES)
+        ? bufToUrl(await v.videoData.arrayBuffer(), v.videoType)
+        : bufToUrl(v.videoData, v.videoType);
+      blobUrlsToRevoke.push(videoUrl);
+
+      const prevDisabled = epIdx <= 0 ? 'disabled' : '';
+      const nextDisabled = epIdx >= episodeCache.length - 1 ? 'disabled' : '';
+      container.innerHTML = `
+        <div class="reader-video-wrap">
+          <video id="reader-video-el" src="${videoUrl}" controls playsinline autoplay></video>
+          <div class="video-ep-nav">
+            <button class="video-ep-nav-btn" ${prevDisabled} onclick="event.stopPropagation(); navigateEpisode(-1)">◀◀</button>
+            <button class="video-ep-nav-btn" ${nextDisabled} onclick="event.stopPropagation(); navigateEpisode(1)">▶▶</button>
+          </div>
+        </div>`;
+      document.getElementById('screen-reader').scrollTop = 0;
+
+      // 재생이 실패하면 아이콘만 뜨고 끝나는 대신 이유를 보여줌
+      const videoEl = document.getElementById('reader-video-el');
+      videoEl.addEventListener('error', () => {
+        const code = videoEl.error ? videoEl.error.code : null;
+        const reasonMap = { 1: '로딩이 중단됐어요', 2: '네트워크 오류', 3: '영상을 디코딩하지 못했어요', 4: '이 기기/브라우저가 지원하지 않는 영상 형식이에요' };
+        const reason = reasonMap[code] || '알 수 없는 오류';
+        const wrap = document.querySelector('.reader-video-wrap');
+        if (wrap && !wrap.querySelector('.video-error-msg')) {
+          const msg = document.createElement('div');
+          msg.className = 'video-error-msg';
+          msg.textContent = `⚠️ 영상을 재생할 수 없어요 (${reason})`;
+          wrap.appendChild(msg);
+        }
+      });
+    } catch (err) {
+      container.innerHTML = `<div class="empty-state"><div class="emoji">⚠️</div><h3>영상을 불러오지 못했어요</h3><p style="font-size:12px;color:var(--text2);margin-top:8px">${escHtml(String((err && err.message) || err))}</p></div>`;
     }
-    const v = vids[0];
-    // iOS Safari has a known bug where a video Blob/File read back from
-    // IndexedDB can fail to decode (play button shows a crossed-out/no-entry
-    // overlay) even though it stored and loaded fine — re-materializing a
-    // fresh Blob from its actual bytes instead of reusing the IndexedDB
-    // -returned object directly is the standard workaround.
-    const videoUrl = v.videoData instanceof Blob
-      ? bufToUrl(await v.videoData.arrayBuffer(), v.videoType)
-      : bufToUrl(v.videoData, v.videoType);
-    blobUrlsToRevoke.push(videoUrl);
-    const prevDisabled = epIdx <= 0 ? 'disabled' : '';
-    const nextDisabled = epIdx >= episodeCache.length - 1 ? 'disabled' : '';
-    container.innerHTML = `
-      <div class="reader-video-wrap">
-        <video src="${videoUrl}" controls playsinline autoplay></video>
-        <div class="video-ep-nav">
-          <button class="video-ep-nav-btn" ${prevDisabled} onclick="event.stopPropagation(); navigateEpisode(-1)">◀◀</button>
-          <button class="video-ep-nav-btn" ${nextDisabled} onclick="event.stopPropagation(); navigateEpisode(1)">▶▶</button>
-        </div>
-      </div>`;
-    document.getElementById('screen-reader').scrollTop = 0;
     return;
   }
 
