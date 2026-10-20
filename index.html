@@ -242,21 +242,39 @@
         모든 데이터는 이 기기 브라우저 안에만 저장돼요.<br>
         실수로 지워질 때를 대비해 백업 파일로 내보내두세요.
       </p>
-      <div class="file-pick-area" style="border-color:var(--accent);margin-bottom:10px" onclick="exportBackup()">
-        <div class="fp-icon">📤</div>
-        <p><strong>백업 내보내기</strong><br>사진·시리즈 정보를 zip 파일로 저장 (영상은 용량 때문에 제외 — 아래에서 따로 저장)</p>
+      <div class="file-pick-area" style="border-color:var(--accent);margin-bottom:10px" onclick="openSeriesExportList()">
+        <div class="fp-icon">📦</div>
+        <p><strong>시리즈별로 백업 (추천)</strong><br>시리즈마다 따로 zip으로 저장 — 한 번에 전부보다 안전함</p>
       </div>
       <div class="file-pick-area" style="border-color:#f0a500;margin-bottom:10px" onclick="document.getElementById('import-file-input').click()">
         <div class="fp-icon">📥</div>
-        <p><strong>백업 가져오기</strong><br>zip 파일에서 사진·시리즈 복원 (영상은 그대로 유지됨)</p>
+        <p><strong>백업 가져오기</strong><br>zip 파일에서 복원 (시리즈별 백업=추가, 전체 백업=교체)</p>
       </div>
       <input type="file" id="import-file-input" accept=".zip" style="display:none" onchange="onImportFileSelected(event)">
-      <div class="file-pick-area" style="border-color:var(--accent2,#7b5ea7)" onclick="openVideoExportList()">
+      <div class="file-pick-area" style="border-color:var(--accent2,#7b5ea7);margin-bottom:10px" onclick="openVideoExportList()">
         <div class="fp-icon">🎬</div>
         <p><strong>영상 개별로 저장</strong><br>영상은 하나씩 원본 파일로 직접 저장</p>
       </div>
+      <div class="file-pick-area" onclick="exportBackup()">
+        <div class="fp-icon">📤</div>
+        <p><strong>전체 한 번에 백업</strong><br>사진이 많으면 용량 때문에 실패할 수 있어요 — 위 "시리즈별로"를 권장</p>
+      </div>
       <div class="modal-actions">
         <button class="btn btn-confirm" onclick="hideModal('modal-settings')">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MODAL: 시리즈별 백업 ── -->
+  <div id="modal-series-export-list" class="modal-backdrop">
+    <div class="modal">
+      <h3>📦 시리즈별로 백업</h3>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:12px;line-height:1.5">
+        한 번에 전부 백업하면 용량 때문에 실패할 수 있어요. 시리즈마다 따로 받으면 그 걱정이 없어요.
+      </p>
+      <div id="series-export-list" style="display:flex;flex-direction:column;gap:8px;max-height:50vh;overflow-y:auto"></div>
+      <div class="modal-actions">
+        <button class="btn btn-confirm" onclick="hideModal('modal-series-export-list')">닫기</button>
       </div>
     </div>
   </div>

@@ -89,6 +89,16 @@ function dbGetAllKeys(store) {
   });
 }
 
+// 인덱스로 좁혀서 키만 가져옴 (예: 특정 회차의 이미지 키만) — 역시 blob은
+// 안 건드리므로 가벼움. 시리즈별 백업에서 "이 시리즈 소속 이미지만" 추리는 데 사용
+function dbGetKeysByIndex(store, index, query) {
+  return new Promise((res, rej) => {
+    const req = tx(store).index(index).getAllKeys(query);
+    req.onsuccess = e => res(e.target.result);
+    req.onerror = e => rej(e.target.error);
+  });
+}
+
 // 저장소 전체 비우기 — getAll() 후 하나씩 delete하는 것보다 훨씬 가볍고,
 // 큰 blob들을 메모리에 올릴 필요가 없음
 function dbClear(store) {
@@ -2194,6 +2204,104 @@ async function exportBackup() {
   }
 }
 
+// "전체 한 번에" 백업은 결국 JSZip이 generateAsync() 시점까지 추가된 이미지를
+// 전부 메모리에 들고 있다가 한꺼번에 묶는 구조라, 시리즈가 많아서 사진 총량이
+// 크면 (스트리밍 읽기로 IndexedDB 쪽은 가볍게 만들어도) 여전히 기기 메모리
+// 한계에 걸려 실패할 수 있음 — 실제로 재현됨. 근본 해결은 "한 번에 묶는 양
+// 자체를 줄이는 것"이라, 시리즈 단위로 따로따로 내보내는 방식을 추가함
+// (라이브러리가 아무리 커도 백업 파일 하나하나는 작게 유지됨).
+async function openSeriesExportList() {
+  hideModal('modal-settings');
+  const allSeries = await dbGetAll('series');
+  const visible = allSeries.filter(s => s.isDefaultVideoBucket !== true).sort((a, b) => b.createdAt - a.createdAt);
+  const allEps = await dbGetAll('episodes');
+  const epCount = {};
+  allEps.forEach(ep => { epCount[ep.seriesId] = (epCount[ep.seriesId] || 0) + 1; });
+
+  const wrap = document.getElementById('series-export-list');
+  if (!visible.length) {
+    wrap.innerHTML = '<p style="color:var(--text2);font-size:14px;text-align:center;padding:12px">백업할 시리즈가 없어요.</p>';
+  } else {
+    wrap.innerHTML = visible.map(s => `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;background:var(--surface2);border-radius:8px">
+        <span style="font-size:14px">${escHtml(s.title)} <span style="color:var(--text2);font-size:12px">(${epCount[s.id] || 0}${s.isVideoGroup ? '개' : '화'})</span></span>
+        <button class="header-action" onclick="exportSeriesBackup(${s.id})">내보내기</button>
+      </div>`
+    ).join('');
+  }
+  showModal('modal-series-export-list');
+}
+
+async function exportSeriesBackup(seriesId) {
+  showProgress();
+  setProgress(5);
+  const failedImages = [];
+  try {
+    const series = await dbGet('series', seriesId);
+    if (!series) throw new Error('시리즈를 찾을 수 없어요');
+    const episodes = await dbGetAll('episodes', 'seriesId', seriesId);
+    const tags = await dbGetAll('tags'); // 태그 이름 표시용 — 양이 적어 통째로 넣어도 안전
+
+    const zip = new JSZip();
+    const imageMetas = [];
+
+    // 이 시리즈 소속 회차들의 이미지 "키"만 먼저 가볍게 모음 (blob은 안 읽음)
+    let imageKeys = [];
+    for (const ep of episodes) {
+      const keys = await dbGetKeysByIndex('images', 'episodeId', ep.id);
+      imageKeys = imageKeys.concat(keys);
+    }
+
+    const total = imageKeys.length || 1;
+    let done = 0;
+    for (const key of imageKeys) {
+      try {
+        const img = await dbGet('images', key);
+        if (img) {
+          zip.file(`images/${img.id}.bin`, img.data);
+          imageMetas.push({ id: img.id, episodeId: img.episodeId, order: img.order, name: img.name, type: img.type });
+        }
+      } catch (err) {
+        failedImages.push(key);
+      }
+      done++; setProgress(5 + (done / total) * 60);
+    }
+
+    const manifest = {
+      version: 3,
+      exportedAt: Date.now(),
+      scope: 'series', // 전체가 아니라 이 시리즈 하나만 들어있다는 표시
+      videosIncluded: false,
+      series: [series], episodes, tags,
+      images: imageMetas
+    };
+    zip.file('data.json', JSON.stringify(manifest));
+
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' }, meta => setProgress(65 + meta.percent * 0.35));
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0, 10);
+    const safeTitle = series.title.replace(/[\\/:*?"<>|]/g, '_');
+    a.href = url; a.download = `webtoon-backup-${safeTitle}-${stamp}.zip`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+    if (failedImages.length) {
+      hideProgress();
+      await showConfirm(
+        '일부만 백업됐어요',
+        `사진 ${failedImages.length}장을 백업에 넣지 못했어요.\n나머지는 정상적으로 zip 파일로 저장됐습니다.`,
+        '확인', 'background:var(--accent);color:#000'
+      );
+    }
+  } catch (err) {
+    await showConfirm('내보내기 실패', String(err.message || err), '확인', '');
+  } finally {
+    hideProgress();
+  }
+}
+
 // zip 백업이 용량 때문에 계속 실패할 때를 위한 대안 — 영상을 zip으로 묶지
 // 않고 한 번에 하나씩만 읽어서 원본 그대로 기기에 저장. 훨씬 가벼운 요청
 // (개별 회차 인덱스 조회 1건)이라 zip 방식보다 실패할 여지가 적음
@@ -2381,12 +2489,9 @@ async function onImportFileSelected(e) {
   const file = e.target.files[0];
   e.target.value = '';
   if (!file) return;
-  const ok = await showConfirm(
-    '백업 가져오기',
-    '지금 기기에 있는 모든 시리즈·사진 정보가 이 백업 파일 내용으로 교체됩니다.\n(영상은 이 백업에 포함되지 않아서 그대로 남아있어요)\n계속할까요?',
-    '가져오기', 'background:var(--accent);color:#000'
-  );
-  if (!ok) return;
+  // 이 파일이 "전체 백업"인지 "시리즈 하나짜리 백업"인지에 따라 동작이
+  // 완전히 다르므로(전체 교체 vs 추가), 먼저 열어서 확인해야 함 —
+  // 확인 문구는 importBackup 안에서 내용을 보고 적절히 띄움
   await importBackup(file);
 }
 
@@ -2399,6 +2504,21 @@ async function importBackup(file) {
     const manifestFile = zip.file('data.json');
     if (!manifestFile) throw new Error('올바른 백업 파일이 아니에요');
     const manifest = JSON.parse(await manifestFile.async('string'));
+
+    if (manifest.scope === 'series') {
+      await importSeriesBackup(zip, manifest);
+      return;
+    }
+
+    hideProgress();
+    const ok = await showConfirm(
+      '백업 가져오기',
+      '지금 기기에 있는 모든 시리즈·사진 정보가 이 백업 파일 내용으로 교체됩니다.\n(영상은 이 백업에 포함되지 않아서 그대로 남아있어요)\n계속할까요?',
+      '가져오기', 'background:var(--accent);color:#000'
+    );
+    if (!ok) return;
+    showProgress();
+    setProgress(10);
 
     // 기존 데이터 비우기 (백업 내용으로 대체) — 'videos'는 일부러 안 비움.
     // 이 백업엔 영상이 안 들어있어서(용량 문제로 exportBackup에서 제외함),
@@ -2442,6 +2562,70 @@ async function importBackup(file) {
 
     hideProgress();
     await showConfirm('가져오기 완료', '백업을 복원했어요.\n확인을 누르면 새로고침됩니다.', '확인', 'background:var(--accent);color:#000');
+    location.reload();
+  } catch (err) {
+    hideProgress();
+    await showConfirm('가져오기 실패', '백업 파일을 읽을 수 없어요.\n' + (err.message || err), '확인', '');
+  }
+}
+
+// 시리즈 하나짜리 백업(exportSeriesBackup으로 만든 파일)은 "교체"가 아니라
+// "추가"해야 함 — 지금 있는 다른 시리즈/사진은 그대로 두고, 이 파일 내용만
+// 새 id로 더해줌. id를 원본 그대로 쓰면(dbPut) 이 기기에 이미 존재하는 전혀
+// 다른 레코드와 번호가 겹쳐 덮어써버릴 위험이 있어서, 전부 dbAdd로 새 id를
+// 받고 시리즈/회차 참조 관계만 새 id로 다시 이어줌
+async function importSeriesBackup(zip, manifest) {
+  try {
+    const oldSeries = manifest.series && manifest.series[0];
+    if (!oldSeries) throw new Error('시리즈 정보가 없는 파일이에요');
+
+    hideProgress();
+    const ok = await showConfirm(
+      '시리즈 가져오기',
+      `"${oldSeries.title}" 시리즈를 추가할까요?\n지금 있는 다른 시리즈·사진은 그대로 유지돼요.`,
+      '추가하기', 'background:var(--accent);color:#000'
+    );
+    if (!ok) return;
+    showProgress();
+    setProgress(10);
+
+    // 이름이 겹치면 구분되게 살짝 바꿔서 추가
+    const existingSeries = await dbGetAll('series');
+    let title = oldSeries.title;
+    if (existingSeries.find(s => s.title.trim() === title.trim())) {
+      title = `${title} (가져옴)`;
+    }
+
+    // 태그는 이 기기의 태그 id 체계와 다를 수 있어서 옮기지 않음(엉뚱한
+    // 태그를 가리키는 것보다 안전) — 필요하면 가져온 뒤 직접 다시 달면 됨
+    const { id: _oldSeriesId, tagIds: _oldTagIds, ...seriesRest } = oldSeries;
+    const newSeriesId = await dbAdd('series', { ...seriesRest, title, tagIds: [] });
+
+    const episodeIdMap = new Map();
+    for (const ep of (manifest.episodes || [])) {
+      const { id: oldEpId, seriesId: _oldSeriesRef, ...epRest } = ep;
+      const newEpId = await dbAdd('episodes', { ...epRest, seriesId: newSeriesId });
+      episodeIdMap.set(oldEpId, newEpId);
+    }
+
+    const imgMetas = manifest.images || [];
+    const total = imgMetas.length || 1;
+    let done = 0;
+    for (const imgMeta of imgMetas) {
+      const entry = zip.file(`images/${imgMeta.id}.bin`);
+      if (entry) {
+        const data = await entry.async('arraybuffer');
+        const { id: _oldImgId, episodeId: oldEpRef, ...imgRest } = imgMeta;
+        const newEpisodeId = episodeIdMap.get(oldEpRef);
+        if (newEpisodeId != null) {
+          await dbAdd('images', { ...imgRest, episodeId: newEpisodeId, data });
+        }
+      }
+      done++; setProgress(10 + (done / total) * 85);
+    }
+
+    hideProgress();
+    await showConfirm('가져오기 완료', `"${title}" 시리즈를 추가했어요.\n확인을 누르면 새로고침됩니다.`, '확인', 'background:var(--accent);color:#000');
     location.reload();
   } catch (err) {
     hideProgress();
@@ -2527,6 +2711,9 @@ async function init() {
   });
   document.getElementById('modal-video-export-list').addEventListener('click', e => {
     if (e.target === e.currentTarget) hideModal('modal-video-export-list');
+  });
+  document.getElementById('modal-series-export-list').addEventListener('click', e => {
+    if (e.target === e.currentTarget) hideModal('modal-series-export-list');
   });
 
   document.getElementById('series-pick-area').addEventListener('click', () => {
