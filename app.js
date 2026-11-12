@@ -543,46 +543,47 @@ async function renderReader() {
 // (render()가 #screen-reader를 지우지 않고 숨기기만 함) 가능한 동작.
 // 표준 API(requestPictureInPicture)가 없는 구형 iOS Safari를 위해
 // webkitSetPresentationMode로도 한 번 더 시도함.
+// 세 번 고쳐도 "아무 반응 없음"이 반복돼서 더 추측하지 않고, 실제로 이
+// 기기/브라우저에서 어떤 API가 있고 어떤 결과가 나오는지 그대로 보여주는
+// 진단 모드로 바꿈 — 성공해도 실패해도 반드시 뭔가 뜸(침묵 상태 자체가 버그였음)
 async function enterPip() {
   const video = document.getElementById('reader-video-el');
-  if (!video) return;
-
-  // Safari는 webkitSupportsPresentationMode로 PIP 지원 여부를 확실하게 미리
-  // 확인할 수 있음 — 이게 되는데도 표준 API(requestPictureInPicture)를 먼저
-  // 썼더니 거부되거나(이전 수정 전) 아예 응답 없이 멈추는(이번에 재현됨)
-  // 경우가 있었음. 그래서 이 확인이 가능하면 표준 API는 건너뛰고 바로
-  // WebKit 방식을 씀 — 더 신뢰도 높은 경로를 우선함
-  if (typeof video.webkitSupportsPresentationMode === 'function'
-      && video.webkitSupportsPresentationMode('picture-in-picture')) {
-    try {
-      const next = video.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture';
-      video.webkitSetPresentationMode(next);
-    } catch (err) {
-      await showConfirm('미니 플레이어 실행 실패', String((err && err.message) || err), '확인', '');
-    }
+  if (!video) {
+    await showConfirm('PIP 진단', 'video 엘리먼트를 못 찾았어요 (reader-video-el 없음)', '확인', '');
     return;
   }
 
-  // 표준 API — 거부되지 않고 그냥 응답 없이 멈추는 기기가 있어서(재현됨)
-  // 무한정 기다리지 않도록 타임아웃을 둠. 실패/타임아웃되면 WebKit 방식이
-  // 있으면 마지막으로 한 번 더 시도
-  if (document.pictureInPictureEnabled && video.requestPictureInPicture) {
-    try {
-      await withTimeout(video.requestPictureInPicture(), 4000, '응답이 없어요');
-      return;
-    } catch (err) {
-      if (typeof video.webkitSetPresentationMode === 'function') {
-        try {
-          video.webkitSetPresentationMode('picture-in-picture');
-          return;
-        } catch (_) { /* 아래 공통 실패 메시지로 */ }
-      }
-      await showConfirm('미니 플레이어 실행 실패', String((err && err.message) || err), '확인', '');
-      return;
+  const diag = {
+    'pictureInPictureEnabled': document.pictureInPictureEnabled,
+    'requestPictureInPicture 존재': typeof video.requestPictureInPicture === 'function',
+    'webkitSupportsPresentationMode 존재': typeof video.webkitSupportsPresentationMode === 'function',
+    'webkitSupportsPresentationMode(pip)': typeof video.webkitSupportsPresentationMode === 'function' ? video.webkitSupportsPresentationMode('picture-in-picture') : 'N/A',
+    'webkitSetPresentationMode 존재': typeof video.webkitSetPresentationMode === 'function',
+    'paused': video.paused,
+    'readyState': video.readyState
+  };
+
+  let outcome;
+  try {
+    if (typeof video.webkitSupportsPresentationMode === 'function' && video.webkitSupportsPresentationMode('picture-in-picture')) {
+      const next = video.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture';
+      video.webkitSetPresentationMode(next);
+      outcome = `webkitSetPresentationMode('${next}') 호출 — 에러 없음`;
+    } else if (document.pictureInPictureEnabled && video.requestPictureInPicture) {
+      await withTimeout(video.requestPictureInPicture(), 4000, '4초 동안 응답 없음');
+      outcome = 'requestPictureInPicture 성공';
+    } else if (typeof video.webkitSetPresentationMode === 'function') {
+      video.webkitSetPresentationMode('picture-in-picture');
+      outcome = 'webkitSetPresentationMode(마지막 시도) 호출 — 에러 없음';
+    } else {
+      outcome = '이 기기에 PIP API 자체가 없음';
     }
+  } catch (err) {
+    outcome = '에러 발생: ' + ((err && err.message) || err);
   }
 
-  await showConfirm('지원 안 함', '이 브라우저/기기에서는 미니 플레이어를 지원하지 않아요.', '확인', '');
+  const diagText = Object.entries(diag).map(([k, v]) => `${k}: ${v}`).join('\n');
+  await showConfirm('PIP 진단 결과', `${diagText}\n\n→ ${outcome}`, '확인', 'background:var(--accent);color:#000');
 }
 
 let overlayVisible = false;
