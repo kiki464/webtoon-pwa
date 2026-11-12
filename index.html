@@ -79,6 +79,14 @@
     </div>
   </div>
 
+  <!-- ── 인앱 미니 플레이어(유튜브 스타일) ── 화면 전환과 무관하게 항상 떠 있는
+       독립 컨테이너 — 영상(.reader-video-wrap)을 여기로 옮겨 넣으면 DOM
+       재배치만 일어나서 재생 상태가 그대로 유지됨 (OS의 Picture-in-Picture
+       API에 기대지 않는, 순수 우리 UI 기반 축소 재생) -->
+  <div id="mini-player-container" class="hidden" onclick="expandMiniPlayer()">
+    <button id="mini-player-close" onclick="event.stopPropagation(); closeMiniPlayer()">✕</button>
+  </div>
+
   <!-- Cover file input (outside any modal so iOS can trigger it) -->
   <input type="file" id="cover-file-input" accept="image/*" style="display:none" onchange="onCoverFileSelected(event)">
 

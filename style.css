@@ -213,6 +213,30 @@ html, body {
   backdrop-filter: blur(6px); cursor: pointer;
 }
 .video-ep-nav-btn:disabled { opacity: .25; }
+
+/* 인앱 미니 플레이어 — .reader-video-wrap을 그대로 여기로 옮겨 넣으므로
+   position:static으로 되돌려서 부모(#mini-player-container)의 작은 박스
+   크기를 그대로 채우게 함 (원래의 position:fixed;inset:0은 전체화면 전용) */
+.reader-video-wrap.mini { position: static; inset: auto; width: 100%; height: 100%; }
+.reader-video-wrap.mini .video-ep-nav { display: none; } /* 작은 화면엔 버튼 자리가 없음 */
+
+#mini-player-container {
+  position: fixed; right: 14px; bottom: 90px;
+  width: 168px; height: 94px;
+  z-index: 500;
+  border-radius: 14px; overflow: hidden;
+  background: #000;
+  box-shadow: 0 10px 30px rgba(0,0,0,.6);
+  cursor: pointer;
+}
+#mini-player-container.hidden { display: none; }
+#mini-player-close {
+  position: absolute; top: 4px; right: 4px; z-index: 2;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: rgba(0,0,0,.6); color: #fff; border: none;
+  font-size: 13px; line-height: 22px; text-align: center; padding: 0;
+  cursor: pointer;
+}
 .video-error-msg {
   position: absolute; bottom: 90px; left: 0; right: 0; z-index: 12;
   text-align: center; color: #ff6b6b; font-size: 13px; font-weight: 600;

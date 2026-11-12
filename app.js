@@ -496,7 +496,7 @@ async function renderReader() {
           <video id="reader-video-el" src="${videoUrl}" controls playsinline autoplay></video>
           <div class="video-ep-nav">
             <button class="video-ep-nav-btn" ${prevDisabled} onclick="event.stopPropagation(); navigateEpisode(-1)">◀◀</button>
-            <button class="video-ep-nav-btn" onclick="event.stopPropagation(); enterPip()" title="미니 플레이어로 보기">📺</button>
+            <button class="video-ep-nav-btn" onclick="event.stopPropagation(); enterMiniPlayer()" title="작게 보면서 다른 화면 보기">🔽</button>
             <button class="video-ep-nav-btn" ${nextDisabled} onclick="event.stopPropagation(); navigateEpisode(1)">▶▶</button>
           </div>
         </div>`;
@@ -552,6 +552,60 @@ async function renderReader() {
 // 세 번 고쳐도 "아무 반응 없음"이 반복돼서 더 추측하지 않고, 실제로 이
 // 기기/브라우저에서 어떤 API가 있고 어떤 결과가 나오는지 그대로 보여주는
 // 진단 모드로 바꿈 — 성공해도 실패해도 반드시 뭔가 뜸(침묵 상태 자체가 버그였음)
+// ── 인앱 미니 플레이어(유튜브 스타일) ──────────────────────────────────────
+// OS의 Picture-in-Picture API(requestPictureInPicture/webkitSetPresentationMode)는
+// 기기/영상마다 지원 여부가 들쭉날쭉해서(이 세션에서 계속 겪었던 문제)
+// 포기하고, 순수 우리 UI로 직접 구현함: 영상이 들어있는 .reader-video-wrap
+// DOM 노드를 화면 전환과 무관한 독립 컨테이너로 "옮기기"만 하면 브라우저가
+// 같은 노드로 인식해서 재생 상태(현재 위치, 재생/일시정지)가 그대로
+// 유지됨 — src를 다시 설정하거나 새로 만드는 게 아니라서 끊김이 없음.
+let miniPlayerState = null; // { seriesId, episodeId } — 탭해서 다시 펼칠 때 필요
+
+function enterMiniPlayer() {
+  const wrap = document.querySelector('.reader-video-wrap');
+  if (!wrap) return;
+
+  miniPlayerState = { seriesId: state.seriesId, episodeId: state.episodeId };
+
+  wrap.classList.add('mini');
+  const container = document.getElementById('mini-player-container');
+  container.insertBefore(wrap, container.firstChild); // 닫기(✕) 버튼은 그대로 맨 위에 남겨둠
+  container.classList.remove('hidden');
+
+  navigate('home');
+}
+
+function expandMiniPlayer() {
+  if (!miniPlayerState) return;
+  const { seriesId, episodeId } = miniPlayerState;
+  const wrap = document.querySelector('#mini-player-container .reader-video-wrap');
+  miniPlayerState = null;
+  document.getElementById('mini-player-container').classList.add('hidden');
+
+  // render()를 거치지 않고 직접 화면만 전환 — renderReader()를 다시 부르면
+  // video 엘리먼트를 새로 만들어서 재생 위치가 처음으로 돌아가 버림
+  state = { screen: 'reader', seriesId, episodeId };
+  document.getElementById('screen-home').classList.add('hidden');
+  document.getElementById('screen-episodes').classList.add('hidden');
+  document.getElementById('screen-reader').classList.remove('hidden');
+  document.getElementById('fab').classList.add('hidden');
+  if (wrap) {
+    wrap.classList.remove('mini');
+    document.getElementById('reader-content').appendChild(wrap);
+  }
+}
+
+function closeMiniPlayer() {
+  const wrap = document.querySelector('#mini-player-container .reader-video-wrap');
+  if (wrap) {
+    const video = wrap.querySelector('video');
+    if (video) { video.pause(); video.removeAttribute('src'); video.load(); }
+    wrap.remove();
+  }
+  document.getElementById('mini-player-container').classList.add('hidden');
+  miniPlayerState = null;
+}
+
 async function enterPip() {
   const video = document.getElementById('reader-video-el');
   if (!video) {
