@@ -490,6 +490,7 @@ async function renderReader() {
           <video id="reader-video-el" src="${videoUrl}" controls playsinline autoplay></video>
           <div class="video-ep-nav">
             <button class="video-ep-nav-btn" ${prevDisabled} onclick="event.stopPropagation(); navigateEpisode(-1)">◀◀</button>
+            <button class="video-ep-nav-btn" onclick="event.stopPropagation(); enterPip()" title="미니 플레이어로 보기">📺</button>
             <button class="video-ep-nav-btn" ${nextDisabled} onclick="event.stopPropagation(); navigateEpisode(1)">▶▶</button>
           </div>
         </div>`;
@@ -534,6 +535,28 @@ async function renderReader() {
 
   // Scroll to top
   document.getElementById('screen-reader').scrollTop = 0;
+}
+
+// 미니 플레이어(PIP) — 영상이 작은 떠있는 창으로 빠져나가서, 그 상태로
+// 사이트 안의 다른 화면(웹툰 목록 등)을 돌아다녀도 계속 재생됨. 화면
+// 전환은 CSS display 토글일 뿐 비디오 엘리먼트 자체를 지우지 않아서
+// (render()가 #screen-reader를 지우지 않고 숨기기만 함) 가능한 동작.
+// 표준 API(requestPictureInPicture)가 없는 구형 iOS Safari를 위해
+// webkitSetPresentationMode로도 한 번 더 시도함.
+async function enterPip() {
+  const video = document.getElementById('reader-video-el');
+  if (!video) return;
+  try {
+    if (document.pictureInPictureEnabled && video.requestPictureInPicture) {
+      await video.requestPictureInPicture();
+    } else if (typeof video.webkitSetPresentationMode === 'function') {
+      video.webkitSetPresentationMode('picture-in-picture');
+    } else {
+      await showConfirm('지원 안 함', '이 브라우저/기기에서는 미니 플레이어를 지원하지 않아요.', '확인', '');
+    }
+  } catch (err) {
+    await showConfirm('미니 플레이어 실행 실패', String((err && err.message) || err), '확인', '');
+  }
 }
 
 let overlayVisible = false;
