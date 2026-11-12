@@ -23,8 +23,81 @@ self.addEventListener('activate', e => {
   self.clients.claim();
 });
 
+// 영상을 blob: URL로 재생시키는 대신, 이 가상 경로로 서비스워커가 직접
+// IndexedDB에서 꺼내 "진짜" 같은 출처(same-origin) URL로 응답해줌 — iOS
+// Safari가 PIP(및 AirPlay)를 blob: URL 영상에서는 거부하는 경우가 있는데
+// (예: "The video element does not support the Picture-in-Picture mode"),
+// 실제 네트워크 URL처럼 보이는 응답으로 바꾸면 이 제약을 피할 수 있음.
+// 덤으로 메인 스레드가 영상을 메모리에 통째로 읽어들일 필요도 없어져서,
+// 이전에 겪었던 "큰 영상 재생 시 크래시"/"디코딩 거부" 문제의 근본 원인
+// 자체가 사라짐 (둘 다 blob: URL + 메모리 복사 방식이 원인이었음).
+const VIDEO_URL_PREFIX = '/webtoon-pwa/__video__/';
+
+function openAppDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('webtoon-db');
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+function getVideoByEpisodeId(episodeId) {
+  return openAppDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction('videos', 'readonly');
+    const idx = tx.objectStore('videos').index('episodeId');
+    const req = idx.get(episodeId);
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror = e => reject(e.target.error);
+  }));
+}
+
+async function handleVideoRequest(request, episodeId) {
+  try {
+    const record = await getVideoByEpisodeId(episodeId);
+    if (!record || !record.videoData) {
+      return new Response('Video not found', { status: 404 });
+    }
+    const type = record.videoType || 'video/mp4';
+    const blob = record.videoData instanceof Blob ? record.videoData : new Blob([record.videoData], { type });
+    const size = blob.size;
+
+    // Range 요청 지원 — 이게 없으면 영상 재생 중 구간 이동(seek)이 안 됨
+    const range = request.headers.get('range');
+    if (range) {
+      const match = /bytes=(\d*)-(\d*)/.exec(range);
+      let start = match && match[1] ? parseInt(match[1], 10) : 0;
+      let end = match && match[2] ? parseInt(match[2], 10) : size - 1;
+      if (Number.isNaN(start)) start = 0;
+      if (Number.isNaN(end) || end >= size) end = size - 1;
+      return new Response(blob.slice(start, end + 1, type), {
+        status: 206,
+        headers: {
+          'Content-Type': type,
+          'Content-Range': `bytes ${start}-${end}/${size}`,
+          'Content-Length': String(end - start + 1),
+          'Accept-Ranges': 'bytes'
+        }
+      });
+    }
+
+    return new Response(blob, {
+      status: 200,
+      headers: { 'Content-Type': type, 'Content-Length': String(size), 'Accept-Ranges': 'bytes' }
+    });
+  } catch (err) {
+    return new Response('Error: ' + ((err && err.message) || err), { status: 500 });
+  }
+}
+
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
+
+  if (url.pathname.startsWith(VIDEO_URL_PREFIX)) {
+    const episodeId = Number(url.pathname.slice(VIDEO_URL_PREFIX.length));
+    e.respondWith(handleVideoRequest(e.request, episodeId));
+    return;
+  }
+
   const isAppShell = APP_SHELL.includes(url.pathname);
 
   if (isAppShell) {

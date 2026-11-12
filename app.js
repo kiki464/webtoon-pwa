@@ -469,19 +469,25 @@ async function renderReader() {
       }
       const v = vids[0];
 
-      // iOS Safari가 IndexedDB에서 꺼낸 Blob을 그대로 재생시키면 가끔
-      // 디코딩을 거부하는(재생 버튼에 금지 아이콘) 버그가 있어서, 바이트를
-      // 다시 읽어 새 Blob으로 만들어주면 우회가 됨. 다만 이걸 큰 파일에도
-      // 똑같이 적용했더니 이번엔 반대로 전체를 메모리에 올리다 기기가
-      // 통째로 죽는(반복 크래시) 문제가 실제로 재현됨 — 그래서 안전한
-      // 용량까지만 이 우회를 적용하고, 그 이상은 그냥 Blob을 직접 사용함
-      // (크래시보다는 재생 버그 쪽이 낫고, 애초에 대부분의 영상은 이
-      // 기준보다 작아서 우회 혜택을 그대로 받음).
-      const SAFE_MATERIALIZE_BYTES = 50 * 1024 * 1024; // 50MB
-      const videoUrl = (v.videoData instanceof Blob && v.videoData.size <= SAFE_MATERIALIZE_BYTES)
-        ? bufToUrl(await v.videoData.arrayBuffer(), v.videoType)
-        : bufToUrl(v.videoData, v.videoType);
-      blobUrlsToRevoke.push(videoUrl);
+      // blob: URL 대신 서비스워커가 IndexedDB에서 직접 꺼내 응답해주는
+      // "진짜" same-origin 경로를 씀(sw.js의 __video__/ 라우트) — iOS
+      // Safari가 blob: URL 영상에서는 PIP(미니 플레이어)를 거부하는 문제
+      // ("The video element does not support the Picture-in-Picture
+      // mode")가 있었는데, 실제 네트워크 URL처럼 보이면 이 제약이 없어짐.
+      // 덤으로 메인 스레드가 영상을 메모리에 복사할 필요도 없어져서,
+      // 예전에 blob 재구성 과정에서 겪었던 재생 거부/크래시 문제의
+      // 근본 원인도 같이 사라짐. 서비스워커가 아직 이 페이지를 컨트롤하지
+      // 않는 아주 드문 경우(최초 로드 등)에만 예전 blob: 방식으로 대체함
+      let videoUrl;
+      if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+        videoUrl = `__video__/${state.episodeId}`;
+      } else {
+        const SAFE_MATERIALIZE_BYTES = 50 * 1024 * 1024; // 50MB
+        videoUrl = (v.videoData instanceof Blob && v.videoData.size <= SAFE_MATERIALIZE_BYTES)
+          ? bufToUrl(await v.videoData.arrayBuffer(), v.videoType)
+          : bufToUrl(v.videoData, v.videoType);
+        blobUrlsToRevoke.push(videoUrl);
+      }
 
       const prevDisabled = epIdx <= 0 ? 'disabled' : '';
       const nextDisabled = epIdx >= episodeCache.length - 1 ? 'disabled' : '';
