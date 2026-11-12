@@ -317,6 +317,7 @@ html, body {
   border-radius: 20px 20px 0 0;
   padding: 20px 20px 40px;
   width: 100%; max-width: 520px;
+  max-height: 85vh; overflow-y: auto; /* 내용이 길면(예: 진단 메시지) 화면 밖으로 잘리는 대신 스크롤되게 */
   transform: translateY(100%);
   transition: transform .25s cubic-bezier(.4,0,.2,1);
 }
