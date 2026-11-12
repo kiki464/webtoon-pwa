@@ -546,17 +546,35 @@ async function renderReader() {
 async function enterPip() {
   const video = document.getElementById('reader-video-el');
   if (!video) return;
-  try {
-    if (document.pictureInPictureEnabled && video.requestPictureInPicture) {
+
+  // iOS Safari는 requestPictureInPicture()가 함수로 "존재"는 하지만 호출하면
+  // "the video element does not support the picture-in-picture mode" 라며
+  // 거부하는 경우가 있음 — 실제로 동작하는 건 WebKit 전용 구형 API
+  // (webkitSetPresentationMode) 쪽이라, 표준 API가 실패하면 반드시 그걸로
+  // 다시 시도해야 함 (존재 여부만 보고 둘 중 하나만 쓰면 안 됨)
+  let lastErr = null;
+  if (document.pictureInPictureEnabled && video.requestPictureInPicture) {
+    try {
       await video.requestPictureInPicture();
-    } else if (typeof video.webkitSetPresentationMode === 'function') {
-      video.webkitSetPresentationMode('picture-in-picture');
-    } else {
-      await showConfirm('지원 안 함', '이 브라우저/기기에서는 미니 플레이어를 지원하지 않아요.', '확인', '');
+      return;
+    } catch (err) {
+      lastErr = err;
     }
-  } catch (err) {
-    await showConfirm('미니 플레이어 실행 실패', String((err && err.message) || err), '확인', '');
   }
+  if (typeof video.webkitSetPresentationMode === 'function') {
+    try {
+      const next = video.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture';
+      video.webkitSetPresentationMode(next);
+      return;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  await showConfirm(
+    '미니 플레이어 실행 실패',
+    lastErr ? String(lastErr.message || lastErr) : '이 브라우저/기기에서는 미니 플레이어를 지원하지 않아요.',
+    '확인', ''
+  );
 }
 
 let overlayVisible = false;
