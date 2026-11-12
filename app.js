@@ -559,17 +559,22 @@ async function enterPip() {
     return;
   }
 
+  const rect = video.getBoundingClientRect();
+  const cs = getComputedStyle(video);
   const diag = {
     'pictureInPictureEnabled': document.pictureInPictureEnabled,
-    'requestPictureInPicture 존재': typeof video.requestPictureInPicture === 'function',
-    'webkitSupportsPresentationMode 존재': typeof video.webkitSupportsPresentationMode === 'function',
     'webkitSupportsPresentationMode(pip)': typeof video.webkitSupportsPresentationMode === 'function' ? video.webkitSupportsPresentationMode('picture-in-picture') : 'N/A',
-    'webkitSetPresentationMode 존재': typeof video.webkitSetPresentationMode === 'function',
+    'disablePictureInPicture': video.disablePictureInPicture,
     'paused': video.paused,
     'readyState': video.readyState,
     'videoWidth x videoHeight': `${video.videoWidth} x ${video.videoHeight}`,
-    'disablePictureInPicture': video.disablePictureInPicture,
-    'src 종류': video.currentSrc.startsWith('blob:') ? 'blob' : video.currentSrc.slice(0, 20)
+    '렌더된 박스 크기(rect)': `${Math.round(rect.width)} x ${Math.round(rect.height)}`,
+    'display': cs.display,
+    'visibility': cs.visibility,
+    'opacity': cs.opacity,
+    'iframe 안?': window.top !== window.self,
+    'duration': video.duration,
+    'UA': navigator.userAgent.slice(0, 60)
   };
 
   let outcome;
