@@ -216,7 +216,7 @@
         <p><strong>탭해서 영상 선택</strong></p>
       </div>
       <div id="video-upload-file-count" class="file-count"></div>
-      <input type="file" id="video-upload-file-input" accept="video/*" style="display:none" onchange="pickVideoUploadFile(event)">
+      <input type="file" id="video-upload-file-input" accept="video/*" style="display:none" onchange="pickVideoUploadFile(event)" oninput="pickVideoUploadFile(event)">
 
       <div style="height:14px"></div>
       <label>썸네일 사진 선택 <span style="color:var(--text2);font-weight:400">(선택 사항 — 안 고르면 시리즈 표지로 대체)</span></label>

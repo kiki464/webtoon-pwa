@@ -727,6 +727,14 @@ function withTimeout(promise, ms, message) {
 async function saveVideoEpisode() {
   const title = document.getElementById('video-ep-name-input').value.trim();
   if (!title) { alert('회차 이름을 입력해주세요'); return; }
+
+  // 사진 앱(Photos)에서 고른 영상은 change 이벤트가 안 뜨거나 pendingVideoFile이
+  // 비어있는 채로 남는 경우가 보고됨 — 저장 직전에 input 엘리먼트에서 직접
+  // 한 번 더 확인함(그게 실제 선택 상태의 최종 소스라 더 믿을 수 있음)
+  if (!pendingVideoFile) {
+    const inputFile = document.getElementById('video-upload-file-input').files[0];
+    if (inputFile) pendingVideoFile = inputFile;
+  }
   if (!pendingVideoFile) { alert('영상을 선택해주세요'); return; }
 
   const videoFile = pendingVideoFile;
