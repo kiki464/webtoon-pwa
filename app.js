@@ -547,34 +547,42 @@ async function enterPip() {
   const video = document.getElementById('reader-video-el');
   if (!video) return;
 
-  // iOS Safari는 requestPictureInPicture()가 함수로 "존재"는 하지만 호출하면
-  // "the video element does not support the picture-in-picture mode" 라며
-  // 거부하는 경우가 있음 — 실제로 동작하는 건 WebKit 전용 구형 API
-  // (webkitSetPresentationMode) 쪽이라, 표준 API가 실패하면 반드시 그걸로
-  // 다시 시도해야 함 (존재 여부만 보고 둘 중 하나만 쓰면 안 됨)
-  let lastErr = null;
-  if (document.pictureInPictureEnabled && video.requestPictureInPicture) {
-    try {
-      await video.requestPictureInPicture();
-      return;
-    } catch (err) {
-      lastErr = err;
-    }
-  }
-  if (typeof video.webkitSetPresentationMode === 'function') {
+  // Safari는 webkitSupportsPresentationMode로 PIP 지원 여부를 확실하게 미리
+  // 확인할 수 있음 — 이게 되는데도 표준 API(requestPictureInPicture)를 먼저
+  // 썼더니 거부되거나(이전 수정 전) 아예 응답 없이 멈추는(이번에 재현됨)
+  // 경우가 있었음. 그래서 이 확인이 가능하면 표준 API는 건너뛰고 바로
+  // WebKit 방식을 씀 — 더 신뢰도 높은 경로를 우선함
+  if (typeof video.webkitSupportsPresentationMode === 'function'
+      && video.webkitSupportsPresentationMode('picture-in-picture')) {
     try {
       const next = video.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture';
       video.webkitSetPresentationMode(next);
+    } catch (err) {
+      await showConfirm('미니 플레이어 실행 실패', String((err && err.message) || err), '확인', '');
+    }
+    return;
+  }
+
+  // 표준 API — 거부되지 않고 그냥 응답 없이 멈추는 기기가 있어서(재현됨)
+  // 무한정 기다리지 않도록 타임아웃을 둠. 실패/타임아웃되면 WebKit 방식이
+  // 있으면 마지막으로 한 번 더 시도
+  if (document.pictureInPictureEnabled && video.requestPictureInPicture) {
+    try {
+      await withTimeout(video.requestPictureInPicture(), 4000, '응답이 없어요');
       return;
     } catch (err) {
-      lastErr = err;
+      if (typeof video.webkitSetPresentationMode === 'function') {
+        try {
+          video.webkitSetPresentationMode('picture-in-picture');
+          return;
+        } catch (_) { /* 아래 공통 실패 메시지로 */ }
+      }
+      await showConfirm('미니 플레이어 실행 실패', String((err && err.message) || err), '확인', '');
+      return;
     }
   }
-  await showConfirm(
-    '미니 플레이어 실행 실패',
-    lastErr ? String(lastErr.message || lastErr) : '이 브라우저/기기에서는 미니 플레이어를 지원하지 않아요.',
-    '확인', ''
-  );
+
+  await showConfirm('지원 안 함', '이 브라우저/기기에서는 미니 플레이어를 지원하지 않아요.', '확인', '');
 }
 
 let overlayVisible = false;
