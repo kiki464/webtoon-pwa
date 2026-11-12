@@ -560,7 +560,10 @@ async function enterPip() {
     'webkitSupportsPresentationMode(pip)': typeof video.webkitSupportsPresentationMode === 'function' ? video.webkitSupportsPresentationMode('picture-in-picture') : 'N/A',
     'webkitSetPresentationMode 존재': typeof video.webkitSetPresentationMode === 'function',
     'paused': video.paused,
-    'readyState': video.readyState
+    'readyState': video.readyState,
+    'videoWidth x videoHeight': `${video.videoWidth} x ${video.videoHeight}`,
+    'disablePictureInPicture': video.disablePictureInPicture,
+    'src 종류': video.currentSrc.startsWith('blob:') ? 'blob' : video.currentSrc.slice(0, 20)
   };
 
   let outcome;
