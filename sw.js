@@ -61,14 +61,27 @@ async function handleVideoRequest(request, episodeId) {
     const blob = record.videoData instanceof Blob ? record.videoData : new Blob([record.videoData], { type });
     const size = blob.size;
 
-    // Range 요청 지원 — 이게 없으면 영상 재생 중 구간 이동(seek)이 안 됨
+    // Range 요청 지원 — 이게 없으면 영상 재생 중 구간 이동(seek)이 안 됨.
+    // "접미사 범위"(bytes=-500 = 마지막 500바이트)도 별도로 처리해야 함 —
+    // 웹 최적화 안 된(moov atom이 파일 끝에 있는) mp4는 플레이어가 파일
+    // 구조를 전부 확인할 때 이런 요청으로 끝부분을 먼저 읽어오는 경우가
+    // 흔한데, 이전 코드는 이 패턴을 지원 안 해서(앞부분 바이트를 잘못
+    // 돌려줌) PIP 같은 더 엄격한 기능에서 실패할 수 있었음
     const range = request.headers.get('range');
     if (range) {
       const match = /bytes=(\d*)-(\d*)/.exec(range);
-      let start = match && match[1] ? parseInt(match[1], 10) : 0;
-      let end = match && match[2] ? parseInt(match[2], 10) : size - 1;
-      if (Number.isNaN(start)) start = 0;
-      if (Number.isNaN(end) || end >= size) end = size - 1;
+      let start, end;
+      if (match && match[1] === '' && match[2] !== '') {
+        // 접미사 범위: 마지막 N바이트
+        const suffixLength = parseInt(match[2], 10);
+        start = Math.max(0, size - suffixLength);
+        end = size - 1;
+      } else {
+        start = match && match[1] ? parseInt(match[1], 10) : 0;
+        end = match && match[2] ? parseInt(match[2], 10) : size - 1;
+        if (Number.isNaN(start)) start = 0;
+        if (Number.isNaN(end) || end >= size) end = size - 1;
+      }
       return new Response(blob.slice(start, end + 1, type), {
         status: 206,
         headers: {
