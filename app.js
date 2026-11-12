@@ -660,10 +660,19 @@ function openVideoUploadModal() {
 }
 
 function pickVideoUploadFile(e) {
-  const file = e.target.files[0];
-  if (!file) return;
+  const files = e.target.files;
+  const countEl = document.getElementById('video-upload-file-count');
+  // 선택 시점에 실제로 뭘 받았는지 그대로 보여줌 — "선택했는데 저장할 때
+  // 없다고 나옴" 문제의 원인이 '선택 자체가 안 됨'인지 '그 이후에 유실됨'
+  // 인지 구분하기 위한 진단. 사진 앱에서 고를 때 특히 중요함
+  if (!files || !files.length) {
+    countEl.innerHTML = `<span style="color:var(--danger)">⚠️ 선택된 파일이 없어요 (브라우저가 아무것도 안 넘겨줌)</span>`;
+    return;
+  }
+  const file = files[0];
   pendingVideoFile = file;
-  document.getElementById('video-upload-file-count').textContent = `🎬 ${file.name} (확인 중...)`;
+  const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+  countEl.textContent = `🎬 ${file.name} (${sizeMB}MB, ${file.type || '타입 정보 없음'})`;
   checkVideoPlayability(file);
 }
 
