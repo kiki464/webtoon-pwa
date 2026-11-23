@@ -2263,6 +2263,40 @@ function openSettingsModal() {
   showModal('modal-settings');
 }
 
+// ── 바로가기 버튼(다른 웹사이트로 이동) ───────────────────────────────────────
+// 주소는 기기별 설정이라 localStorage에만 저장(동기화/백업 대상 아님) —
+// 처음엔 비어있다가, 누르면 입력받아서 저장하고 그 다음부터는 바로 이동
+const EXTERNAL_LINK_KEY = 'external-link-url';
+
+async function handleExternalLinkClick() {
+  let url = null;
+  try { url = localStorage.getItem(EXTERNAL_LINK_KEY); } catch (_) {}
+
+  if (!url) {
+    await promptExternalLinkUrl();
+    try { url = localStorage.getItem(EXTERNAL_LINK_KEY); } catch (_) {}
+    if (!url) return; // 취소했거나 빈 채로 저장함
+  }
+  window.open(url, '_blank');
+}
+
+// 길게 누르면/우클릭하면 이미 저장된 주소를 바꿀 수 있음
+async function promptExternalLinkUrl() {
+  let current = '';
+  try { current = localStorage.getItem(EXTERNAL_LINK_KEY) || ''; } catch (_) {}
+
+  const input = await showRename('바로가기 주소 입력', current);
+  if (input === null) return; // 취소
+  const trimmed = input.trim();
+
+  if (!trimmed) {
+    try { localStorage.removeItem(EXTERNAL_LINK_KEY); } catch (_) {}
+    return;
+  }
+  const finalUrl = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try { localStorage.setItem(EXTERNAL_LINK_KEY, finalUrl); } catch (_) {}
+}
+
 // 영상은 이 zip 백업에 절대 포함하지 않음 — JSZip은 파일을 하나씩
 // "읽고 바로 버리는" 스트리밍이 아니라 generateAsync() 시점까지 추가된
 // 데이터를 전부 메모리에 들고 있다가 한꺼번에 압축하는 구조라, 읽기를
@@ -2831,6 +2865,15 @@ async function init() {
       else openAddEpisodeModal();
     }
   });
+
+  // 🔗 바로가기 버튼 — 길게 누르기/우클릭하면 주소 변경(이미 설정돼 있어도)
+  const extLinkBtn = document.getElementById('external-link-btn');
+  extLinkBtn.addEventListener('touchstart', () => {
+    longPressTimer = setTimeout(() => promptExternalLinkUrl(), 500);
+  }, { passive: true });
+  extLinkBtn.addEventListener('touchend', () => clearTimeout(longPressTimer), { passive: true });
+  extLinkBtn.addEventListener('touchmove', () => clearTimeout(longPressTimer), { passive: true });
+  extLinkBtn.addEventListener('contextmenu', e => { e.preventDefault(); promptExternalLinkUrl(); });
 
   document.getElementById('modal-add-series').addEventListener('click', e => {
     if (e.target === e.currentTarget) hideModal('modal-add-series');
